@@ -1,0 +1,10 @@
+numpy>=1.24
+PyYAML>=6.0
+torch>=2.1
+transformers>=4.40
+nibabel>=5.1
+SimpleITK>=2.3
+nnunetv2>=2.4
+dynamic-network-architectures>=0.3
+positional-encodings>=6.0
+tqdm>=4.66
