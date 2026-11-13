@@ -30,6 +30,7 @@ from cue_sfda.method.uncertainty import (
 from cue_sfda.modeling.voxtell import VoxTellRuntime
 from cue_sfda.modeling.lora import lora_disabled
 from cue_sfda.utils import save_json
+from cue_sfda.sat_rescue import evaluate_sat_assisted
 
 
 class CUETrainer:
@@ -76,12 +77,26 @@ class CUETrainer:
         self.scaler = torch.amp.GradScaler("cuda", enabled=self.amp_enabled)
         self.start_iteration = 0
         self.best_dice = float("-inf")
+        self.best_sat_dice = float("-inf")
         self.best_iteration: int | None = None
         self.best_checkpoint_path: Path | None = None
         self.last_validation_iteration: int | None = None
         self.calibration_foreground_counts: dict[str, int] = {}
         self.skipped_case_names: set[str] = set()
         self.routing_metadata: dict[str, int | float | str] = {}
+        rescue = config.get("sat_rescue", {})
+        self.sat_proposal_dir = Path(rescue["proposal_dir"]).expanduser() if rescue.get("proposal_dir") else None
+        self.sat_gate_csv = Path(rescue["gate_csv"]).expanduser() if rescue.get("gate_csv") else None
+        self.sat_gate_threshold = float(rescue.get("gate_threshold", 0.01))
+        self.sat_rescue_cases: set[str] = set()
+        self.sat_proposals: dict[str, np.ndarray] = {}
+        if self.sat_proposal_dir and self.sat_gate_csv and self.sat_gate_csv.is_file():
+            with self.sat_gate_csv.open(encoding="utf-8-sig", newline="") as handle:
+                import csv
+                for row in csv.DictReader(handle):
+                    if float(row.get("voxtell_max_probability", 0.0)) > self.sat_gate_threshold and int(float(row.get("sat_prediction_voxels", 0))) > 0:
+                        self.sat_rescue_cases.add(str(row["case_id"]))
+            self.logger.info("SAT rescue fixed train gate: threshold=%.4f selected=%d", self.sat_gate_threshold, len(self.sat_rescue_cases))
 
     def run(
         self,
@@ -190,6 +205,17 @@ class CUETrainer:
         self.skipped_case_names = {
             row.case_id for row in assignments if row.assigned_branch == "skip"
         }
+        self.sat_rescue_cases &= self.skipped_case_names
+        self.skipped_case_names -= self.sat_rescue_cases
+        if self.sat_proposal_dir:
+            for name in self.sat_rescue_cases:
+                p = self.sat_proposal_dir / f"{name}.npy"
+                if p.is_file():
+                    self.sat_proposals[name] = np.load(p).astype(np.float32).squeeze()
+                else:
+                    self.logger.warning("Missing SAT proposal for rescue case %s", name)
+            self.sat_rescue_cases &= set(self.sat_proposals)
+        self.routing_metadata["sat_rescue"] = len(self.sat_rescue_cases)
         self.routing_metadata = metadata
         write_routing_csv(self.output_dir / "routing.csv", assignments)
         save_json(metadata, self.output_dir / "routing_summary.json")
@@ -316,6 +342,9 @@ class CUETrainer:
             if high_confidence:
                 loss, patch_metrics = self._high_confidence_loss(image)
                 branch = "high"
+            elif case.name in self.sat_rescue_cases:
+                loss, patch_metrics = self._sat_rescue_loss(image, case, case_slicer, case_volume)
+                branch = "sat_rescue"
             else:
                 loss, patch_metrics = self._low_confidence_loss(image, partner_image)
                 branch = "low"
@@ -359,6 +388,31 @@ class CUETrainer:
                 refined_foreground_sum / max(voxel_sum, 1)
             ),
         }
+
+    def _sat_rescue_loss(self, image, case, case_slicer, case_volume):
+        proposal = self.sat_proposals[case.name]
+        # Use the exact same centered padding convention as TargetVolumeStore.
+        from acvl_utils.cropping_and_padding.padding import pad_nd_image
+        proposal_tensor = torch.from_numpy(proposal[None]).float()
+        proposal_tensor, _ = pad_nd_image(proposal_tensor, self.patch_size, "constant", {"value": 0}, True, None)
+        if tuple(proposal_tensor.shape[-3:]) != tuple(case_volume.shape[-3:]):
+            shape = tuple(int(x) for x in case_volume.shape[-3:])
+            fixed = torch.zeros((1, *shape), dtype=torch.float32)
+            common = tuple(min(shape[i], proposal_tensor.shape[-3+i]) for i in range(3))
+            fixed[:, :common[0], :common[1], :common[2]] = proposal_tensor[:, :common[0], :common[1], :common[2]]
+            proposal_tensor = fixed
+        patch_mask = proposal_tensor[(slice(None), *case_slicer)].to(self.device).unsqueeze(0)
+        with self._autocast():
+            logits = self.model(image, self.embedding)
+            if bool(patch_mask.any()):
+                loss = torch.nn.functional.softplus(-logits[patch_mask.bool()]).mean()
+                effective = True
+            else:
+                loss = logits.sum() * 0.0
+                effective = False
+        vox = int(patch_mask.sum().item())
+        return loss, {"raw_foreground_voxels": vox, "refined_foreground_voxels": vox,
+                      "voxels": int(patch_mask.numel()), "effective": effective}
 
     def _estimate(
         self, image: torch.Tensor, partner: torch.Tensor
@@ -547,11 +601,17 @@ class CUETrainer:
             self.logger,
             save_predictions=True,
         )
+        assisted = None
+        if self.sat_proposal_dir:
+            assisted = evaluate_sat_assisted(self.config, self.runtime, self.validation_cases, self.validation_gt_path, self.sat_proposal_dir, self.sat_gate_threshold, validation_dir / "sat_assisted", self.logger, save_predictions=True)
         self.model.train(was_training)
         self.last_validation_iteration = iteration
         mean_dice = float(summary["mean_dice"])
         if mean_dice > self.best_dice:
             self._save_best(iteration, mean_dice)
+        if assisted is not None and assisted["assisted_mean_dice"] > self.best_sat_dice:
+            self.best_sat_dice = float(assisted["assisted_mean_dice"])
+            self._save(self.output_dir / "checkpoints" / "best_sat_assisted.pt", iteration)
         self._save_latest(iteration)
         self.logger.info(
             "validation_iteration=%d mean_dice=%.6f mean_iou=%.6f",
@@ -559,6 +619,8 @@ class CUETrainer:
             summary["mean_dice"],
             summary["mean_iou"],
         )
+        if assisted is not None:
+            self.logger.info("validation_iteration=%d SAT-assisted mean_dice=%.6f mean_iou=%.6f gate_pass=%d", iteration, assisted["assisted_mean_dice"], assisted["assisted_mean_iou"], assisted["sat_gate_pass"])
 
     def _autocast(self):
         if not self.amp_enabled:
@@ -596,6 +658,7 @@ class CUETrainer:
         self.best_iteration = int(iteration)
         self.best_checkpoint_path = path
         self._save(path, iteration)
+        self._save(checkpoint_dir / "best_voxtell_only.pt", iteration)
         for previous_path in previous_paths:
             if previous_path != path and previous_path.is_file():
                 previous_path.unlink()
