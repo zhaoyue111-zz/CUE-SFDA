@@ -28,7 +28,10 @@ def build_parser() -> argparse.ArgumentParser:
         "evaluate", help="Evaluate an adapted LoRA checkpoint"
     )
     _add_common_arguments(evaluation_parser)
-    evaluation_parser.add_argument("--checkpoint", type=Path, required=True)
+    evaluation_parser.add_argument(
+        "--checkpoint", type=Path,
+        help="LoRA checkpoint; omit to evaluate the frozen VoxTell baseline",
+    )
     evaluation_parser.add_argument("--gt-path", type=Path, required=True)
     return parser
 
@@ -41,6 +44,10 @@ def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--gpu-id", type=int)
     parser.add_argument("--iterations", type=int)
     parser.add_argument("--calibration-cases", type=int)
+    parser.add_argument(
+        "--routing-mode",
+        choices=("original", "image", "joint", "joint_gate"),
+    )
 
 
 def main() -> None:
@@ -89,8 +96,11 @@ def main() -> None:
             return
         logger.info("Training complete; latest checkpoint: %s", checkpoint_path)
         return
-    load_checkpoint(args.checkpoint, runtime.model)
-    logger.info("Loaded LoRA checkpoint: %s", args.checkpoint)
+    if args.checkpoint is not None:
+        load_checkpoint(args.checkpoint, runtime.model)
+        logger.info("Loaded LoRA checkpoint: %s", args.checkpoint)
+    else:
+        logger.info("Evaluating frozen VoxTell baseline (zero LoRA deltas)")
     evaluate(
         config,
         runtime,

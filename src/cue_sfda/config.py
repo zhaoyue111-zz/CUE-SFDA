@@ -56,6 +56,9 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError(
             "method.min_case_pseudo_foreground_voxels must be positive"
         )
+    routing_mode = str(config["method"].get("routing_mode", "original"))
+    if routing_mode not in {"original", "image", "joint", "joint_gate"}:
+        raise ValueError("method.routing_mode must be original/image/joint/joint_gate")
     tile_step_size = float(config["train"].get("tile_step_size", 0.5))
     if not 0.0 < tile_step_size <= 1.0:
         raise ValueError("train.tile_step_size must be in (0, 1]")
@@ -81,5 +84,7 @@ def apply_overrides(config: dict[str, Any], args: Any) -> dict[str, Any]:
         config["method"]["iterations"] = int(args.iterations)
     if getattr(args, "calibration_cases", None) is not None:
         config["method"]["calibration_cases"] = int(args.calibration_cases)
+    if getattr(args, "routing_mode", None):
+        config["method"]["routing_mode"] = str(args.routing_mode)
     validate_config(config)
     return config

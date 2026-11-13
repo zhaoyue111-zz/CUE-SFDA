@@ -20,6 +20,7 @@ from cue_sfda.method.losses import (
     masked_soft_dice_loss,
 )
 from cue_sfda.method.refinement import affinity_random_walk
+from cue_sfda.method.routing import build_routing_assignments, write_routing_csv
 from cue_sfda.method.uncertainty import (
     ChebyshevEstimate,
     ConfidencePartition,
@@ -79,6 +80,8 @@ class CUETrainer:
         self.best_checkpoint_path: Path | None = None
         self.last_validation_iteration: int | None = None
         self.calibration_foreground_counts: dict[str, int] = {}
+        self.skipped_case_names: set[str] = set()
+        self.routing_metadata: dict[str, int | float | str] = {}
 
     def run(
         self,
@@ -96,7 +99,11 @@ class CUETrainer:
         ):
             self._validate(0)
         if not self.partition.scores:
-            self._calibrate()
+            routing_mode = str(self.config["method"].get("routing_mode", "original"))
+            if self.config["method"].get("routing_uncertainty_csv"):
+                self._initialize_routing(routing_mode)
+            else:
+                self._calibrate()
             self._save_latest(self.start_iteration)
         method_config = self.config["method"]
         train_config = self.config["train"]
@@ -113,7 +120,10 @@ class CUETrainer:
             index
             for index, case in enumerate(self.train_cases)
             if not self.partition.is_high_confidence(case.name)
+            and case.name not in self.skipped_case_names
         ]
+        if not high_indices and not low_indices:
+            raise RuntimeError("Routing excluded every training case")
         self.model.train()
         for iteration in range(self.start_iteration + 1, total_iterations + 1):
             case_index = self._sample_case_index(high_indices, low_indices)
@@ -167,6 +177,30 @@ class CUETrainer:
             for name, value in payload.get("foreground_counts", {}).items()
         }
         self.logger.info("Loaded DWI confidence partition: %s", path)
+
+    def _initialize_routing(self, mode: str) -> None:
+        method_config = self.config["method"]
+        assignments, scores, metadata = build_routing_assignments(
+            [case.name for case in self.train_cases],
+            mode=mode,
+            uncertainty_csv=method_config["routing_uncertainty_csv"],
+            reference_partition=method_config["routing_reference_partition"],
+        )
+        self.partition.initialize(scores)
+        self.skipped_case_names = {
+            row.case_id for row in assignments if row.assigned_branch == "skip"
+        }
+        self.routing_metadata = metadata
+        write_routing_csv(self.output_dir / "routing.csv", assignments)
+        save_json(metadata, self.output_dir / "routing_summary.json")
+        self.logger.info(
+            "Routing mode=%s score=%s reference_high=%d reference_low=%d "
+            "high=%d low=%d skip=%d no_response=%d",
+            metadata["mode"], metadata["ranking_score"],
+            metadata["reference_high"], metadata["reference_low"],
+            metadata["high"], metadata["low"], metadata["skip"],
+            metadata["no_response"],
+        )
 
     def _sample_case_index(
         self,

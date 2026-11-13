@@ -54,7 +54,7 @@ def evaluate(
         prediction = probability >= threshold
         label_value = int(config["evaluation"]["label_value"])
         ground_truth = label == label_value
-        dice, iou = binary_metrics(prediction, ground_truth)
+        metrics = binary_metrics_full(prediction, ground_truth)
         if save_predictions:
             prediction_path = prediction_dir / case.name
             reader.write_seg(
@@ -65,8 +65,7 @@ def evaluate(
         rows.append(
             {
                 "case": case.name,
-                "dice": dice,
-                "iou": iou,
+                **metrics,
                 "predicted_voxels": int(prediction.sum()),
                 "ground_truth_voxels": int(ground_truth.sum()),
             }
@@ -76,8 +75,8 @@ def evaluate(
             index,
             len(cases),
             case.name,
-            dice,
-            iou,
+            metrics["dice"],
+            metrics["iou"],
         )
     metrics_path = output_root / "metrics_per_case.csv"
     with metrics_path.open("w", newline="", encoding="utf-8") as handle:
@@ -87,6 +86,8 @@ def evaluate(
     summary = {
         "mean_dice": float(np.mean([row["dice"] for row in rows])),
         "mean_iou": float(np.mean([row["iou"] for row in rows])),
+        "mean_precision": float(np.mean([row["precision"] for row in rows])),
+        "mean_recall": float(np.mean([row["recall"] for row in rows])),
         "num_cases": len(rows),
     }
     summary_path = output_root / "metrics_summary.csv"
@@ -181,17 +182,33 @@ def binary_metrics(
     ground_truth: np.ndarray,
     epsilon: float = 1e-7,
 ) -> tuple[float, float]:
+    metrics = binary_metrics_full(prediction, ground_truth, epsilon)
+    return metrics["dice"], metrics["iou"]
+
+
+def binary_metrics_full(
+    prediction: np.ndarray,
+    ground_truth: np.ndarray,
+    epsilon: float = 1e-7,
+) -> dict[str, float]:
     prediction = prediction.astype(bool, copy=False)
     ground_truth = ground_truth.astype(bool, copy=False)
     prediction_sum = int(prediction.sum())
     ground_truth_sum = int(ground_truth.sum())
     if ground_truth_sum == 0:
         score = 1.0 if prediction_sum == 0 else 0.0
-        return score, score
+        return {"dice": score, "iou": score, "precision": score, "recall": 1.0}
     intersection = int(np.logical_and(prediction, ground_truth).sum())
     union = int(np.logical_or(prediction, ground_truth).sum())
     dice = (2.0 * intersection + epsilon) / (
         prediction_sum + ground_truth_sum + epsilon
     )
     iou = (intersection + epsilon) / (union + epsilon)
-    return float(dice), float(iou)
+    precision = 0.0 if prediction_sum == 0 else intersection / prediction_sum
+    recall = (intersection + epsilon) / (ground_truth_sum + epsilon)
+    return {
+        "dice": float(dice),
+        "iou": float(iou),
+        "precision": float(precision),
+        "recall": float(recall),
+    }
