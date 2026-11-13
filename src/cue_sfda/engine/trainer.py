@@ -88,15 +88,19 @@ class CUETrainer:
         self.sat_proposal_dir = Path(rescue["proposal_dir"]).expanduser() if rescue.get("proposal_dir") else None
         self.sat_gate_csv = Path(rescue["gate_csv"]).expanduser() if rescue.get("gate_csv") else None
         self.sat_gate_threshold = float(rescue.get("gate_threshold", 0.01))
+        self.sat_gate_mode = str(rescue.get("gate_mode", "response"))
         self.sat_rescue_cases: set[str] = set()
         self.sat_proposals: dict[str, np.ndarray] = {}
         if self.sat_proposal_dir and self.sat_gate_csv and self.sat_gate_csv.is_file():
             with self.sat_gate_csv.open(encoding="utf-8-sig", newline="") as handle:
                 import csv
                 for row in csv.DictReader(handle):
-                    if float(row.get("voxtell_max_probability", 0.0)) > self.sat_gate_threshold and int(float(row.get("sat_prediction_voxels", 0))) > 0:
+                    volume_ok = int(float(row.get("sat_prediction_voxels", 0))) > 0
+                    response_ok = float(row.get("voxtell_max_probability", 0.0)) > self.sat_gate_threshold
+                    gate_ok = volume_ok if self.sat_gate_mode in {"none", "volume"} else (volume_ok and response_ok)
+                    if gate_ok:
                         self.sat_rescue_cases.add(str(row["case_id"]))
-            self.logger.info("SAT rescue fixed train gate: threshold=%.4f selected=%d", self.sat_gate_threshold, len(self.sat_rescue_cases))
+            self.logger.info("SAT rescue fixed train gate: mode=%s threshold=%.4f selected=%d", self.sat_gate_mode, self.sat_gate_threshold, len(self.sat_rescue_cases))
 
     def run(
         self,
@@ -105,6 +109,10 @@ class CUETrainer:
     ) -> Path:
         if resume is not None:
             self._resume(resume)
+            # Rebuild fixed D routing metadata after resume. Checkpoints carry
+            # confidence scores, but routing skip/rescue sets are derived state.
+            if self.config["method"].get("routing_uncertainty_csv"):
+                self._initialize_routing(str(self.config["method"].get("routing_mode", "original")))
         elif confidence_partition is not None:
             self._load_partition(confidence_partition)
         if (
@@ -603,7 +611,7 @@ class CUETrainer:
         )
         assisted = None
         if self.sat_proposal_dir:
-            assisted = evaluate_sat_assisted(self.config, self.runtime, self.validation_cases, self.validation_gt_path, self.sat_proposal_dir, self.sat_gate_threshold, validation_dir / "sat_assisted", self.logger, save_predictions=True)
+            assisted = evaluate_sat_assisted(self.config, self.runtime, self.validation_cases, self.validation_gt_path, self.sat_proposal_dir, self.sat_gate_threshold, validation_dir / "sat_assisted", self.logger, save_predictions=True, gate_mode=self.sat_gate_mode)
         self.model.train(was_training)
         self.last_validation_iteration = iteration
         mean_dice = float(summary["mean_dice"])

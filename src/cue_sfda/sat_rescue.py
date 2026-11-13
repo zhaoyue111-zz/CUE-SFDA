@@ -6,7 +6,7 @@ from nnunetv2.imageio.nibabel_reader_writer import NibabelIOWithReorient
 from nnunetv2.preprocessing.normalization.default_normalization_schemes import ZScoreNormalization
 from cue_sfda.evaluation import predict_volume, binary_metrics_full
 
-def evaluate_sat_assisted(config, runtime, cases, gt_path, proposal_dir, threshold, output_dir, logger, save_predictions=True):
+def evaluate_sat_assisted(config, runtime, cases, gt_path, proposal_dir, threshold, output_dir, logger, save_predictions=True, gate_mode="response"):
     out=Path(output_dir); out.mkdir(parents=True,exist_ok=True); po=out/'voxtell_only_predictions'; pa=out/'sat_assisted_predictions'
     if save_predictions: po.mkdir(exist_ok=True); pa.mkdir(exist_ok=True)
     reader=NibabelIOWithReorient(); normalizer=ZScoreNormalization(intensityproperties={}); rows=[]
@@ -17,7 +17,8 @@ def evaluate_sat_assisted(config, runtime, cases, gt_path, proposal_dir, thresho
         p=Path(proposal_dir)/f'{case.name}.npy'; proposal=np.load(p).astype(bool).squeeze() if p.is_file() else np.zeros_like(prob,dtype=bool)
         if proposal.shape!=prob.shape: proposal=np.zeros_like(prob,dtype=bool)
         max_response=float(prob[proposal].max()) if proposal.any() else 0.0
-        gate=bool((not vpred.any()) and proposal.any() and max_response>float(threshold))
+        gate_ok = proposal.any() if gate_mode in {"none", "volume"} else (proposal.any() and max_response>float(threshold))
+        gate=bool((not vpred.any()) and gate_ok)
         apred=proposal if gate else vpred
         vm=binary_metrics_full(vpred,gt); am=binary_metrics_full(apred,gt)
         if save_predictions:
