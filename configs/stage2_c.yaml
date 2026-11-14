@@ -71,9 +71,10 @@ stage2:
   prototype_count: 4
   similarity_temperature: 0.15
   memory_momentum: 0.9
-  lambda_proto: 0.02
+  lambda_proto: 0.0
   lambda_prior: 0.05
   lambda_boundary: 0.01
   uncertain_low: 0.2
   uncertain_high: 0.8
   query_refinement: false
+  legacy_proto_loss: false

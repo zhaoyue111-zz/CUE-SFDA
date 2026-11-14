@@ -82,18 +82,28 @@ class CUETrainer:
         self.best_sat_dice = float("-inf")
         stage2 = config.get("stage2", {})
         self.stage2_mode = str(stage2.get("mode", "none"))
+        prototype_strategy = str(stage2.get("prototype_strategy", ""))
+        if not prototype_strategy:
+            prototype_strategy = "spatial" if self.stage2_mode in {"prior_fixed", "prior", "weighted_prior"} else "clustered"
         self.stage2_memory = StableSupportMemory(
             max_local=int(stage2.get("prototype_count", 4)),
             momentum=float(stage2.get("memory_momentum", 0.9)),
+            clustered=prototype_strategy == "clustered",
         )
         self.stage2_top_k = int(stage2.get("top_k", 3))
         self.stage2_temperature = float(stage2.get("similarity_temperature", 0.15))
-        self.stage2_proto_weight = float(stage2.get("lambda_proto", 0.02))
+        self.stage2_proto_weight = float(stage2.get("lambda_proto", 0.0))
+        if self.stage2_mode in {"prior_fixed", "prior", "global", "local", "full"} and self.stage2_proto_weight <= 0.0:
+            self.stage2_proto_weight = 0.02
         self.stage2_prior_weight = float(stage2.get("lambda_prior", 0.05))
         self.stage2_boundary_weight = float(stage2.get("lambda_boundary", 0.01))
         self.stage2_uncertain_low = float(stage2.get("uncertain_low", 0.2))
         self.stage2_uncertain_high = float(stage2.get("uncertain_high", 0.8))
-        self.stage2_refine = bool(stage2.get("query_refinement", False)) or self.stage2_mode == "full"
+        self.stage2_refine = bool(stage2.get("query_refinement", False))
+        # The old foreground-only attraction is retained solely for the
+        # explicitly named reproduction ablation. New prior variants never
+        # pull every uncertain voxel toward foreground.
+        self.stage2_legacy_proto = bool(stage2.get("legacy_proto_loss", False)) or self.stage2_mode in {"prior_fixed", "prior", "global", "local", "full"}
         self.best_iteration: int | None = None
         self.best_checkpoint_path: Path | None = None
         self.last_validation_iteration: int | None = None
@@ -623,68 +633,78 @@ class CUETrainer:
         )
         stage2_extra: dict[str, float] = {}
         if self.stage2_mode != "none" and self.stage2_memory.entries:
-            retrieved = self.stage2_memory.retrieve(
-                student_features,
-                self.stage2_top_k,
-                self.stage2_temperature,
-            )
-            if retrieved is not None:
-                foreground, background, boundary = retrieved
-                # The support prior is a detached teacher-side signal. Keeping
-                # feature similarity out of the autograd graph is essential for
-                # the memory-heavy 3-D decoder feature tensor.
-                prior = self.stage2_memory.prior(
-                    student_features.detach(),
-                    foreground,
-                    background,
-                    self.stage2_temperature,
-                )
-                prior = F.interpolate(
-                    prior, size=student_probability.shape[-3:], mode="trilinear", align_corners=False
-                )
-                uncertain = (student_probability > self.stage2_uncertain_low) & (student_probability < self.stage2_uncertain_high)
-                # Attraction is computed on a small pooled feature grid and a
-                # bounded number of uncertain voxels, avoiding a full 3-D
-                # cosine tensor in the LoRA backward graph.
-                pooled_features = F.adaptive_avg_pool3d(torch.nan_to_num(student_features.float()), (8, 8, 8))
-                q_features = F.normalize(pooled_features, dim=1, eps=1e-6)
-                uncertain_feature = F.interpolate(uncertain.float(), size=q_features.shape[-3:], mode="nearest")[:, 0].bool()
-                q_vectors = q_features.permute(0, 2, 3, 4, 1)[uncertain_feature]
-                if q_vectors.shape[0] > 512:
-                    q_vectors = q_vectors[:: max(1, q_vectors.shape[0] // 512)][:512]
-                fg_center = F.normalize(foreground.to(q_features.device).mean(0), dim=0, eps=1e-6)
-                if self.stage2_refine:
-                    query_fg = student_probability.detach() >= 0.7
-                    query_fg = F.interpolate(query_fg.float(), size=q_features.shape[-3:], mode="nearest")[:, 0].bool()
-                    query_vectors = q_features.permute(0, 2, 3, 4, 1)[query_fg]
-                    if query_vectors.numel() > 0:
-                        query_center = F.normalize(query_vectors.mean(0), dim=0, eps=1e-6)
-                        fg_center = F.normalize(0.7 * fg_center + 0.3 * query_center, dim=0, eps=1e-6)
-                if q_vectors.numel() == 0:
-                    proto_loss = student_logits.sum() * 0.0
+            # Prior-Fixed is intentionally the old implementation: weighted
+            # prototypes are concatenated before normalization and the legacy
+            # foreground-only attraction is enabled only for this ablation.
+            if self.stage2_mode in {"prior_fixed", "prior", "global", "local", "full"}:
+                retrieved = self.stage2_memory.retrieve(student_features, self.stage2_top_k, self.stage2_temperature)
+                supports = []
+            else:
+                # Correct path: each support independently produces A_k(v),
+                # then case-level query/support weights fuse the priors.
+                retrieved = None
+                supports = self.stage2_memory.retrieve_supports(student_features, self.stage2_top_k, self.stage2_temperature)
+            if retrieved is not None or supports:
+                if retrieved is not None:
+                    foreground, background, boundary = retrieved
+                    prior = self.stage2_memory.prior(student_features.detach(), foreground, background, self.stage2_temperature)
                 else:
-                    proto_loss = (1.0 - F.cosine_similarity(q_vectors, fg_center[None], dim=1, eps=1e-6)).mean()
-                proto_loss = torch.nan_to_num(proto_loss)
-                prior_loss = F.binary_cross_entropy(student_probability.clamp(1e-5, 1.0 - 1e-5), prior.detach(), reduction="none")
+                    foreground = background = boundary = None
+                    prior = self.stage2_memory.weighted_prior(student_features.detach(), supports, self.stage2_temperature)
+                prior = F.interpolate(prior, size=student_probability.shape[-3:], mode="trilinear", align_corners=False).detach()
+                uncertain = (student_probability > self.stage2_uncertain_low) & (student_probability < self.stage2_uncertain_high)
+                prior_loss = F.binary_cross_entropy(
+                    student_probability.clamp(1e-5, 1.0 - 1e-5), prior, reduction="none"
+                )
                 prior_loss = (prior_loss * uncertain.float()).sum() / uncertain.sum().clamp_min(1)
-                boundary_map = F.max_pool3d((student_probability > 0.5).float(), 3, 1, 1) - (-F.max_pool3d(-(student_probability > 0.5).float(), 3, 1, 1))
-                boundary_mask = (boundary_map.abs() > 0).float()
-                boundary_features = F.normalize(F.adaptive_avg_pool3d(student_features.detach().float(), (8, 8, 8)), dim=1, eps=1e-6)
-                boundary_center = F.normalize(boundary.to(q_features.device).mean(0), dim=0, eps=1e-6)
-                boundary_score = (boundary_features * boundary_center[None, :, None, None, None]).sum(dim=1, keepdim=True)
-                boundary_target = F.interpolate(torch.sigmoid(boundary_score / max(self.stage2_temperature, 1e-4)), size=student_probability.shape[-3:], mode="trilinear", align_corners=False).detach()
-                boundary_loss = F.binary_cross_entropy(student_probability.clamp(1e-5, 1.0 - 1e-5), boundary_target, reduction="none")
-                boundary_loss = (boundary_loss * boundary_mask).sum() / boundary_mask.sum().clamp_min(1)
                 prior_loss = torch.nan_to_num(prior_loss)
-                boundary_loss = torch.nan_to_num(boundary_loss)
-                if self.stage2_mode == "global":
-                    loss = loss + self.stage2_proto_weight * proto_loss
-                elif self.stage2_mode == "local":
-                    loss = loss + self.stage2_proto_weight * proto_loss
-                elif self.stage2_mode == "prior":
+
+                # Legacy attraction is kept only to reproduce the old Prior
+                # result. It is disabled by default for all corrected modes.
+                proto_loss = student_logits.sum() * 0.0
+                if self.stage2_legacy_proto and retrieved is not None:
+                    pooled_features = F.adaptive_avg_pool3d(torch.nan_to_num(student_features.float()), (8, 8, 8))
+                    q_features = F.normalize(pooled_features, dim=1, eps=1e-6)
+                    uncertain_feature = F.interpolate(uncertain.float(), size=q_features.shape[-3:], mode="nearest")[:, 0].bool()
+                    q_vectors = q_features.permute(0, 2, 3, 4, 1)[uncertain_feature]
+                    if q_vectors.shape[0] > 512:
+                        q_vectors = q_vectors[:: max(1, q_vectors.shape[0] // 512)][:512]
+                    fg_center = F.normalize(foreground.to(q_features.device).mean(0), dim=0, eps=1e-6)
+                    if self.stage2_refine:
+                        query_fg = student_probability.detach() >= 0.7
+                        query_fg = F.interpolate(query_fg.float(), size=q_features.shape[-3:], mode="nearest")[:, 0].bool()
+                        query_vectors_fg = q_features.permute(0, 2, 3, 4, 1)[query_fg]
+                        if query_vectors_fg.numel() > 0:
+                            fg_center = F.normalize(0.7 * fg_center + 0.3 * query_vectors_fg.mean(0), dim=0, eps=1e-6)
+                    if q_vectors.numel() > 0:
+                        proto_loss = (1.0 - F.cosine_similarity(q_vectors, fg_center[None], dim=1, eps=1e-6)).mean()
+                    proto_loss = torch.nan_to_num(proto_loss)
+
+                boundary_loss = student_logits.sum() * 0.0
+                if self.stage2_mode == "clustered_boundary":
+                    boundary_prior = self.stage2_memory.weighted_prior(
+                        student_features.detach(), supports, self.stage2_temperature, field="boundary"
+                    )
+                    boundary_target = F.interpolate(
+                        boundary_prior, size=student_probability.shape[-3:], mode="trilinear", align_corners=False
+                    ).detach()
+                    boundary_map = F.max_pool3d((student_probability > 0.5).float(), 3, 1, 1) - (-F.max_pool3d(-(student_probability > 0.5).float(), 3, 1, 1))
+                    boundary_mask = (boundary_map.abs() > 0).float()
+                    boundary_loss = F.binary_cross_entropy(
+                        student_probability.clamp(1e-5, 1.0 - 1e-5), boundary_target, reduction="none"
+                    )
+                    boundary_loss = torch.nan_to_num((boundary_loss * boundary_mask).sum() / boundary_mask.sum().clamp_min(1))
+
+                if self.stage2_mode in {"prior_fixed", "prior"}:
                     loss = loss + self.stage2_proto_weight * proto_loss + self.stage2_prior_weight * prior_loss
-                elif self.stage2_mode == "full":
-                    loss = loss + self.stage2_proto_weight * proto_loss + self.stage2_prior_weight * prior_loss + self.stage2_boundary_weight * boundary_loss
+                elif self.stage2_mode in {"weighted_prior", "clustered_prior"}:
+                    loss = loss + self.stage2_prior_weight * prior_loss
+                elif self.stage2_mode == "clustered_boundary":
+                    loss = loss + self.stage2_prior_weight * prior_loss + self.stage2_boundary_weight * boundary_loss
+                elif self.stage2_mode in {"global", "local", "full"}:
+                    # Backwards-compatible aliases for previously generated
+                    # runs; new experiments use the explicit names above.
+                    loss = loss + self.stage2_proto_weight * proto_loss + self.stage2_prior_weight * prior_loss
                 stage2_extra["stage2_prior_mean"] = float(prior.detach().mean().item())
         threshold = float(self.config["method"]["probability_threshold"])
         prototype_voxels = int((prototype >= threshold).sum().item())

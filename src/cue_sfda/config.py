@@ -60,8 +60,11 @@ def validate_config(config: dict[str, Any]) -> None:
     if routing_mode not in {"original", "image", "joint", "joint_gate"}:
         raise ValueError("method.routing_mode must be original/image/joint/joint_gate")
     stage2_mode = str(config.get("stage2", {}).get("mode", "none"))
-    if stage2_mode not in {"none", "global", "local", "prior", "full"}:
-        raise ValueError("stage2.mode must be none/global/local/prior/full")
+    if stage2_mode not in {
+        "none", "global", "local", "prior", "prior_fixed", "weighted_prior",
+        "clustered_prior", "clustered_boundary", "full",
+    }:
+        raise ValueError("invalid stage2.mode")
     tile_step_size = float(config["train"].get("tile_step_size", 0.5))
     if not 0.0 < tile_step_size <= 1.0:
         raise ValueError("train.tile_step_size must be in (0, 1]")

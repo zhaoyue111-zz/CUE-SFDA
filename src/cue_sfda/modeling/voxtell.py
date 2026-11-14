@@ -157,14 +157,17 @@ def _encode_prompt(
         embedding = payload["embedding"] if isinstance(payload, dict) else payload
         return embedding.float()
     # Some CPU-only torchvision wheels omit the compiled NMS operator while
-    # recent transformers imports its fake registration unconditionally.
-    # Define the schema before importing transformers; this is a no-op when
-    # the real operator is already present.
+    # recent transformers imports its fake registration unconditionally. Only
+    # define the fallback schema when torchvision itself cannot import; doing
+    # this unconditionally conflicts with wheels that already ship NMS.
     try:
-        lib = torch.library.Library("torchvision", "DEF")
-        lib.define("nms(Tensor boxes, Tensor scores, float iou_threshold) -> Tensor")
+        import torchvision  # noqa: F401
     except Exception:
-        pass
+        try:
+            lib = torch.library.Library("torchvision", "DEF")
+            lib.define("nms(Tensor boxes, Tensor scores, float iou_threshold) -> Tensor")
+        except Exception:
+            pass
     from transformers import AutoModel, AutoTokenizer
     from voxtell.utils.text_embedding import last_token_pool, wrap_with_instruction
 
