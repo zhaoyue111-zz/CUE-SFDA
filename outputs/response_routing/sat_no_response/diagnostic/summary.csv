@@ -1,0 +1,2 @@
+prompt,n_no_response,sat_nonempty_recovered,sat_nonempty_recovered_rate,dice_gt_0.1_count,dice_gt_0.1_rate,dice_gt_0.3_count,dice_gt_0.3_rate,dice_gt_0.5_count,dice_gt_0.5_rate,sat_nonempty_dice_le_0.1_count,sat_nonempty_dice_le_0.1_rate_of_nonempty,mean_dice,mean_precision,mean_recall
+liver cancer,17,17,1.0,5,0.29411764705882354,5,0.29411764705882354,0,0.0,12,0.7058823529411765,0.10683588560695347,0.27158102376805476,0.11483802568283934

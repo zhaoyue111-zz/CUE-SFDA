@@ -1,0 +1,17 @@
+{"image": "/data/hilab/datasets/WCH_MRI145/DWI/images/0001679853.nii.gz", "label": ["liver cancer"], "dataset": "D_no_response", "modality": "mri", "orientation_code": "RAS"}
+{"image": "/data/hilab/datasets/WCH_MRI145/DWI/images/0009808605.nii.gz", "label": ["liver cancer"], "dataset": "D_no_response", "modality": "mri", "orientation_code": "RAS"}
+{"image": "/data/hilab/datasets/WCH_MRI145/DWI/images/0013837968.nii.gz", "label": ["liver cancer"], "dataset": "D_no_response", "modality": "mri", "orientation_code": "RAS"}
+{"image": "/data/hilab/datasets/WCH_MRI145/DWI/images/0016011685.nii.gz", "label": ["liver cancer"], "dataset": "D_no_response", "modality": "mri", "orientation_code": "RAS"}
+{"image": "/data/hilab/datasets/WCH_MRI145/DWI/images/0017174204.nii.gz", "label": ["liver cancer"], "dataset": "D_no_response", "modality": "mri", "orientation_code": "RAS"}
+{"image": "/data/hilab/datasets/WCH_MRI145/DWI/images/0017354579.nii.gz", "label": ["liver cancer"], "dataset": "D_no_response", "modality": "mri", "orientation_code": "RAS"}
+{"image": "/data/hilab/datasets/WCH_MRI145/DWI/images/0017452826.nii.gz", "label": ["liver cancer"], "dataset": "D_no_response", "modality": "mri", "orientation_code": "RAS"}
+{"image": "/data/hilab/datasets/WCH_MRI145/DWI/images/0018289026.nii.gz", "label": ["liver cancer"], "dataset": "D_no_response", "modality": "mri", "orientation_code": "RAS"}
+{"image": "/data/hilab/datasets/WCH_MRI145/DWI/images/0018290394.nii.gz", "label": ["liver cancer"], "dataset": "D_no_response", "modality": "mri", "orientation_code": "RAS"}
+{"image": "/data/hilab/datasets/WCH_MRI145/DWI/images/0018806748.nii.gz", "label": ["liver cancer"], "dataset": "D_no_response", "modality": "mri", "orientation_code": "RAS"}
+{"image": "/data/hilab/datasets/WCH_MRI145/DWI/images/0019873347.nii.gz", "label": ["liver cancer"], "dataset": "D_no_response", "modality": "mri", "orientation_code": "RAS"}
+{"image": "/data/hilab/datasets/WCH_MRI145/DWI/images/0032182222.nii.gz", "label": ["liver cancer"], "dataset": "D_no_response", "modality": "mri", "orientation_code": "RAS"}
+{"image": "/data/hilab/datasets/WCH_MRI145/DWI/images/0032229283.nii.gz", "label": ["liver cancer"], "dataset": "D_no_response", "modality": "mri", "orientation_code": "RAS"}
+{"image": "/data/hilab/datasets/WCH_MRI145/DWI/images/0033235247.nii.gz", "label": ["liver cancer"], "dataset": "D_no_response", "modality": "mri", "orientation_code": "RAS"}
+{"image": "/data/hilab/datasets/WCH_MRI145/DWI/images/0033498429.nii.gz", "label": ["liver cancer"], "dataset": "D_no_response", "modality": "mri", "orientation_code": "RAS"}
+{"image": "/data/hilab/datasets/WCH_MRI145/DWI/images/0033655986.nii.gz", "label": ["liver cancer"], "dataset": "D_no_response", "modality": "mri", "orientation_code": "RAS"}
+{"image": "/data/hilab/datasets/WCH_MRI145/DWI/images/0033923781.nii.gz", "label": ["liver cancer"], "dataset": "D_no_response", "modality": "mri", "orientation_code": "RAS"}

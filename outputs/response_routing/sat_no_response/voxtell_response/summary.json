@@ -1,0 +1,8 @@
+{
+  "n": 17,
+  "effective_proposals": 5,
+  "ineffective_proposals": 12,
+  "mean_response_effective": 0.0008367913232880374,
+  "mean_response_ineffective": 9.482235008130624e-13,
+  "small_sample_warning": "n=17; correlation and classifier estimates are exploratory and unstable"
+}

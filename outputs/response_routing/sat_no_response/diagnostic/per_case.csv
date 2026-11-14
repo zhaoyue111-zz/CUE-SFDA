@@ -1,0 +1,18 @@
+case_id,voxtell_empty,sat_nonempty,sat_prediction_voxels,gt_voxels,dice,precision,recall,sat_prediction_path
+0001679853.nii.gz,True,True,58,1528,0.0,0.0,0.0,outputs/response_routing/sat_no_response/results/D_no_response/seg_0001679853/liver cancer.nii.gz
+0009808605.nii.gz,True,True,963,7788,0.010513084218946407,0.04776739356178609,0.005906522855675398,outputs/response_routing/sat_no_response/results/D_no_response/seg_0009808605/liver cancer.nii.gz
+0013837968.nii.gz,True,True,1074,986,0.0,0.0,0.0,outputs/response_routing/sat_no_response/results/D_no_response/seg_0013837968/liver cancer.nii.gz
+0016011685.nii.gz,True,True,59,1034,0.0,0.0,0.0,outputs/response_routing/sat_no_response/results/D_no_response/seg_0016011685/liver cancer.nii.gz
+0017174204.nii.gz,True,True,9304,41348,0.3303324646608229,0.899183147033534,0.20233143078262553,outputs/response_routing/sat_no_response/results/D_no_response/seg_0017174204/liver cancer.nii.gz
+0017354579.nii.gz,True,True,15256,68613,0.32562687047657657,0.8950576822233876,0.19901476396601228,outputs/response_routing/sat_no_response/results/D_no_response/seg_0017354579/liver cancer.nii.gz
+0017452826.nii.gz,True,True,1083,60782,0.03501171906570759,1.0,0.017817774999177388,outputs/response_routing/sat_no_response/results/D_no_response/seg_0017452826/liver cancer.nii.gz
+0018289026.nii.gz,True,True,372,399,0.0,0.0,0.0,outputs/response_routing/sat_no_response/results/D_no_response/seg_0018289026/liver cancer.nii.gz
+0018290394.nii.gz,True,True,1929,3609,0.38678223185265437,0.5552099533437014,0.2967581047381546,outputs/response_routing/sat_no_response/results/D_no_response/seg_0018290394/liver cancer.nii.gz
+0018806748.nii.gz,True,True,12432,66198,0.30013989571410404,0.9491634491634492,0.17825311942959002,outputs/response_routing/sat_no_response/results/D_no_response/seg_0018806748/liver cancer.nii.gz
+0019873347.nii.gz,True,True,4675,1251,0.4215322308471144,0.2671657754010695,0.9984012789768185,outputs/response_routing/sat_no_response/results/D_no_response/seg_0019873347/liver cancer.nii.gz
+0032182222.nii.gz,True,True,2964,1031,0.0,0.0,0.0,outputs/response_routing/sat_no_response/results/D_no_response/seg_0032182222/liver cancer.nii.gz
+0032229283.nii.gz,True,True,3003,186,0.006271558482282847,0.00333000333000333,0.053763440860215055,outputs/response_routing/sat_no_response/results/D_no_response/seg_0032229283/liver cancer.nii.gz
+0033235247.nii.gz,True,True,613,3943,0.0,0.0,0.0,outputs/response_routing/sat_no_response/results/D_no_response/seg_0033235247/liver cancer.nii.gz
+0033498429.nii.gz,True,True,524,4522,0.0,0.0,0.0,outputs/response_routing/sat_no_response/results/D_no_response/seg_0033498429/liver cancer.nii.gz
+0033655986.nii.gz,True,True,18,10443,0.0,0.0,0.0,outputs/response_routing/sat_no_response/results/D_no_response/seg_0033655986/liver cancer.nii.gz
+0033923781.nii.gz,True,True,891,10248,0.0,0.0,0.0,outputs/response_routing/sat_no_response/results/D_no_response/seg_0033923781/liver cancer.nii.gz

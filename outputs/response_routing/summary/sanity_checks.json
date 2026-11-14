@@ -1,0 +1,103 @@
+{
+  "baseline_mean_dice": 0.28333568879757304,
+  "baseline_matches_existing": true,
+  "empty_test_ground_truth": 0,
+  "experiments": {
+    "A": {
+      "routing": {
+        "mode": "original",
+        "ranking_score": "cue_quality",
+        "reference_threshold": 0.5,
+        "reference_high": 59,
+        "reference_low": 42,
+        "high": 59,
+        "low": 42,
+        "skip": 0,
+        "no_response": 17,
+        "response_present": 84,
+        "no_response_all_raw_predictions_empty": true,
+        "response_present_all_raw_predictions_nonempty": true,
+        "rounding_rule": "Python round(nearest, ties-to-even)"
+      },
+      "non_routing_config_matches_original": true,
+      "finite_losses": true,
+      "loss_not_always_zero": true,
+      "logged_loss_min": 0.000752,
+      "logged_loss_max": 4.388181,
+      "nonempty_test_predictions": 38,
+      "empty_test_predictions": 6
+    },
+    "B": {
+      "routing": {
+        "mode": "image",
+        "ranking_score": "image_uncertainty",
+        "reference_threshold": 0.5,
+        "reference_high": 59,
+        "reference_low": 42,
+        "high": 59,
+        "low": 42,
+        "skip": 0,
+        "no_response": 17,
+        "response_present": 84,
+        "no_response_all_raw_predictions_empty": true,
+        "response_present_all_raw_predictions_nonempty": true,
+        "rounding_rule": "Python round(nearest, ties-to-even)"
+      },
+      "non_routing_config_matches_original": true,
+      "finite_losses": true,
+      "loss_not_always_zero": true,
+      "logged_loss_min": 0.0,
+      "logged_loss_max": 3.651729,
+      "nonempty_test_predictions": 43,
+      "empty_test_predictions": 1
+    },
+    "C": {
+      "routing": {
+        "mode": "joint",
+        "ranking_score": "joint_uncertainty",
+        "reference_threshold": 0.5,
+        "reference_high": 59,
+        "reference_low": 42,
+        "high": 59,
+        "low": 42,
+        "skip": 0,
+        "no_response": 17,
+        "response_present": 84,
+        "no_response_all_raw_predictions_empty": true,
+        "response_present_all_raw_predictions_nonempty": true,
+        "rounding_rule": "Python round(nearest, ties-to-even)"
+      },
+      "non_routing_config_matches_original": true,
+      "finite_losses": true,
+      "loss_not_always_zero": true,
+      "logged_loss_min": 0.0,
+      "logged_loss_max": 3.491246,
+      "nonempty_test_predictions": 44,
+      "empty_test_predictions": 0
+    },
+    "D": {
+      "routing": {
+        "mode": "joint_gate",
+        "ranking_score": "joint_uncertainty",
+        "reference_threshold": 0.5,
+        "reference_high": 59,
+        "reference_low": 42,
+        "high": 49,
+        "low": 35,
+        "skip": 17,
+        "no_response": 17,
+        "response_present": 84,
+        "no_response_all_raw_predictions_empty": true,
+        "response_present_all_raw_predictions_nonempty": true,
+        "rounding_rule": "Python round(nearest, ties-to-even)"
+      },
+      "non_routing_config_matches_original": true,
+      "finite_losses": true,
+      "loss_not_always_zero": true,
+      "logged_loss_min": 0.001352,
+      "logged_loss_max": 3.964601,
+      "nonempty_test_predictions": 44,
+      "empty_test_predictions": 0
+    }
+  }
+}

@@ -48,6 +48,8 @@ def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
         "--routing-mode",
         choices=("original", "image", "joint", "joint_gate"),
     )
+    parser.add_argument("--stage2-mode", choices=("none", "global", "local", "prior", "full"))
+    parser.add_argument("--stage2-top-k", type=int)
 
 
 def main() -> None:

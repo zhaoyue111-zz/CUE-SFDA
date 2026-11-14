@@ -1,0 +1,26 @@
+{
+  "best_voxtell_only.pt": {
+    "mean_dice": 0.3369235056364012,
+    "mean_iou": 0.25534325184945506,
+    "mean_precision": 0.27636900820171295,
+    "mean_recall": 0.6268049264000372,
+    "assisted_mean_dice": 0.3369235056364012,
+    "assisted_mean_iou": 0.25534325184945506,
+    "assisted_mean_precision": 0.27636900820171295,
+    "assisted_mean_recall": 0.6268049264000372,
+    "no_response": 0,
+    "sat_gate_pass": 0
+  },
+  "best_sat_assisted.pt": {
+    "mean_dice": 0.3369235056364012,
+    "mean_iou": 0.25534325184945506,
+    "mean_precision": 0.27636900820171295,
+    "mean_recall": 0.6268049264000372,
+    "assisted_mean_dice": 0.3369235056364012,
+    "assisted_mean_iou": 0.25534325184945506,
+    "assisted_mean_precision": 0.27636900820171295,
+    "assisted_mean_recall": 0.6268049264000372,
+    "no_response": 0,
+    "sat_gate_pass": 0
+  }
+}

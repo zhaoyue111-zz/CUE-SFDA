@@ -1,0 +1,3 @@
+task,prompt,mean_dice,mean_iou,num_cases,prediction_dir
+liver,liver,0.7209052299208426,0.5877867376977087,44,/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA/outputs/dwi_only_liver_cancer/evaluation_both_with_liver_cancer_ckpt/liver/predictions
+liver_cancer,liver cancer,0.33054070223805065,0.25182932696344507,44,/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA/outputs/dwi_only_liver_cancer/evaluation_both_with_liver_cancer_ckpt/liver_cancer/predictions

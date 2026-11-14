@@ -59,6 +59,9 @@ def validate_config(config: dict[str, Any]) -> None:
     routing_mode = str(config["method"].get("routing_mode", "original"))
     if routing_mode not in {"original", "image", "joint", "joint_gate"}:
         raise ValueError("method.routing_mode must be original/image/joint/joint_gate")
+    stage2_mode = str(config.get("stage2", {}).get("mode", "none"))
+    if stage2_mode not in {"none", "global", "local", "prior", "full"}:
+        raise ValueError("stage2.mode must be none/global/local/prior/full")
     tile_step_size = float(config["train"].get("tile_step_size", 0.5))
     if not 0.0 < tile_step_size <= 1.0:
         raise ValueError("train.tile_step_size must be in (0, 1]")
@@ -86,5 +89,9 @@ def apply_overrides(config: dict[str, Any], args: Any) -> dict[str, Any]:
         config["method"]["calibration_cases"] = int(args.calibration_cases)
     if getattr(args, "routing_mode", None):
         config["method"]["routing_mode"] = str(args.routing_mode)
+    if getattr(args, "stage2_mode", None):
+        config.setdefault("stage2", {})["mode"] = str(args.stage2_mode)
+    if getattr(args, "stage2_top_k", None) is not None:
+        config.setdefault("stage2", {})["top_k"] = int(args.stage2_top_k)
     validate_config(config)
     return config

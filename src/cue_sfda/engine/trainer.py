@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 from cue_sfda.data import CaseRecord, TargetVolumeStore
 from cue_sfda.engine.checkpoint import load_checkpoint, save_checkpoint
@@ -31,6 +32,7 @@ from cue_sfda.modeling.voxtell import VoxTellRuntime
 from cue_sfda.modeling.lora import lora_disabled
 from cue_sfda.utils import save_json
 from cue_sfda.sat_rescue import evaluate_sat_assisted
+from cue_sfda.method.retrieval import StableSupportMemory
 
 
 class CUETrainer:
@@ -78,6 +80,20 @@ class CUETrainer:
         self.start_iteration = 0
         self.best_dice = float("-inf")
         self.best_sat_dice = float("-inf")
+        stage2 = config.get("stage2", {})
+        self.stage2_mode = str(stage2.get("mode", "none"))
+        self.stage2_memory = StableSupportMemory(
+            max_local=int(stage2.get("prototype_count", 4)),
+            momentum=float(stage2.get("memory_momentum", 0.9)),
+        )
+        self.stage2_top_k = int(stage2.get("top_k", 3))
+        self.stage2_temperature = float(stage2.get("similarity_temperature", 0.15))
+        self.stage2_proto_weight = float(stage2.get("lambda_proto", 0.02))
+        self.stage2_prior_weight = float(stage2.get("lambda_prior", 0.05))
+        self.stage2_boundary_weight = float(stage2.get("lambda_boundary", 0.01))
+        self.stage2_uncertain_low = float(stage2.get("uncertain_low", 0.2))
+        self.stage2_uncertain_high = float(stage2.get("uncertain_high", 0.8))
+        self.stage2_refine = bool(stage2.get("query_refinement", False)) or self.stage2_mode == "full"
         self.best_iteration: int | None = None
         self.best_checkpoint_path: Path | None = None
         self.last_validation_iteration: int | None = None
@@ -147,6 +163,8 @@ class CUETrainer:
         ]
         if not high_indices and not low_indices:
             raise RuntimeError("Routing excluded every training case")
+        if self.stage2_mode != "none" and self.start_iteration == 0:
+            self._prime_stage2_memory(high_indices)
         self.model.train()
         for iteration in range(self.start_iteration + 1, total_iterations + 1):
             case_index = self._sample_case_index(high_indices, low_indices)
@@ -348,7 +366,7 @@ class CUETrainer:
             image = self._patch(case_volume, case_slicer)
             partner_image = self._patch(partner_volume, partner_slicer)
             if high_confidence:
-                loss, patch_metrics = self._high_confidence_loss(image)
+                loss, patch_metrics = self._high_confidence_loss(image, case.name)
                 branch = "high"
             elif case.name in self.sat_rescue_cases:
                 loss, patch_metrics = self._sat_rescue_loss(image, case, case_slicer, case_volume)
@@ -396,6 +414,24 @@ class CUETrainer:
                 refined_foreground_sum / max(voxel_sum, 1)
             ),
         }
+
+    def _prime_stage2_memory(self, high_indices: list[int]) -> None:
+        """Populate stable support memory once before the first query update."""
+        self.logger.info("Priming Stage-2 stable support memory: cases=%d", len(high_indices))
+        was_training = self.model.training
+        self.model.eval()
+        with torch.no_grad():
+            for index in high_indices:
+                case = self.train_cases[index]
+                volume, slicers = self.store.sliding_window(case, self.tile_step_size)
+                if not slicers:
+                    continue
+                image = self._patch(volume, slicers[0])
+                with self._autocast():
+                    logits, features = self.model(image, self.embedding, return_features=True)
+                self.stage2_memory.update(case.name, features, torch.sigmoid(logits.float()))
+        self.model.train(was_training)
+        self.logger.info("Stage-2 stable support memory ready: entries=%d", len(self.stage2_memory.entries))
 
     def _sat_rescue_loss(self, image, case, case_slicer, case_volume):
         proposal = self.sat_proposals[case.name]
@@ -470,6 +506,7 @@ class CUETrainer:
     def _high_confidence_loss(
         self,
         image: torch.Tensor,
+        case_name: str | None = None,
     ) -> tuple[torch.Tensor, dict[str, int | bool]]:
         method_config = self.config["method"]
         teacher_image = image
@@ -506,6 +543,8 @@ class CUETrainer:
                 # Preserve source seeds in the memory-bounded 3-D extension so
                 # adaptive pooling cannot erase small tumor pseudo-labels.
                 refined = torch.maximum(refined, teacher_probability)
+            if self.stage2_mode != "none" and case_name is not None:
+                self.stage2_memory.update(case_name, features, teacher_probability)
             del features
             del teacher_logits
             del teacher_probability
@@ -563,7 +602,12 @@ class CUETrainer:
         prototype = torch.stack(aligned_probabilities).mean(dim=0)
         self.model.train()
         with self._autocast():
-            student_logits = self.model(student_view.image, self.embedding)
+            if self.stage2_mode != "none":
+                student_logits, student_features = self.model(
+                    student_view.image, self.embedding, return_features=True
+                )
+            else:
+                student_logits = self.model(student_view.image, self.embedding)
         student_probability = torch.sigmoid(student_logits.float())
         student_probability = student_view.align(student_probability)
         train_config = self.config["train"]
@@ -577,13 +621,80 @@ class CUETrainer:
             float(train_config["low_consistency_weight"]) * consistency
             + float(train_config["low_entropy_weight"]) * entropy
         )
+        stage2_extra: dict[str, float] = {}
+        if self.stage2_mode != "none" and self.stage2_memory.entries:
+            retrieved = self.stage2_memory.retrieve(
+                student_features,
+                self.stage2_top_k,
+                self.stage2_temperature,
+            )
+            if retrieved is not None:
+                foreground, background, boundary = retrieved
+                # The support prior is a detached teacher-side signal. Keeping
+                # feature similarity out of the autograd graph is essential for
+                # the memory-heavy 3-D decoder feature tensor.
+                prior = self.stage2_memory.prior(
+                    student_features.detach(),
+                    foreground,
+                    background,
+                    self.stage2_temperature,
+                )
+                prior = F.interpolate(
+                    prior, size=student_probability.shape[-3:], mode="trilinear", align_corners=False
+                )
+                uncertain = (student_probability > self.stage2_uncertain_low) & (student_probability < self.stage2_uncertain_high)
+                # Attraction is computed on a small pooled feature grid and a
+                # bounded number of uncertain voxels, avoiding a full 3-D
+                # cosine tensor in the LoRA backward graph.
+                pooled_features = F.adaptive_avg_pool3d(torch.nan_to_num(student_features.float()), (8, 8, 8))
+                q_features = F.normalize(pooled_features, dim=1, eps=1e-6)
+                uncertain_feature = F.interpolate(uncertain.float(), size=q_features.shape[-3:], mode="nearest")[:, 0].bool()
+                q_vectors = q_features.permute(0, 2, 3, 4, 1)[uncertain_feature]
+                if q_vectors.shape[0] > 512:
+                    q_vectors = q_vectors[:: max(1, q_vectors.shape[0] // 512)][:512]
+                fg_center = F.normalize(foreground.to(q_features.device).mean(0), dim=0, eps=1e-6)
+                if self.stage2_refine:
+                    query_fg = student_probability.detach() >= 0.7
+                    query_fg = F.interpolate(query_fg.float(), size=q_features.shape[-3:], mode="nearest")[:, 0].bool()
+                    query_vectors = q_features.permute(0, 2, 3, 4, 1)[query_fg]
+                    if query_vectors.numel() > 0:
+                        query_center = F.normalize(query_vectors.mean(0), dim=0, eps=1e-6)
+                        fg_center = F.normalize(0.7 * fg_center + 0.3 * query_center, dim=0, eps=1e-6)
+                if q_vectors.numel() == 0:
+                    proto_loss = student_logits.sum() * 0.0
+                else:
+                    proto_loss = (1.0 - F.cosine_similarity(q_vectors, fg_center[None], dim=1, eps=1e-6)).mean()
+                proto_loss = torch.nan_to_num(proto_loss)
+                prior_loss = F.binary_cross_entropy(student_probability.clamp(1e-5, 1.0 - 1e-5), prior.detach(), reduction="none")
+                prior_loss = (prior_loss * uncertain.float()).sum() / uncertain.sum().clamp_min(1)
+                boundary_map = F.max_pool3d((student_probability > 0.5).float(), 3, 1, 1) - (-F.max_pool3d(-(student_probability > 0.5).float(), 3, 1, 1))
+                boundary_mask = (boundary_map.abs() > 0).float()
+                boundary_features = F.normalize(F.adaptive_avg_pool3d(student_features.detach().float(), (8, 8, 8)), dim=1, eps=1e-6)
+                boundary_center = F.normalize(boundary.to(q_features.device).mean(0), dim=0, eps=1e-6)
+                boundary_score = (boundary_features * boundary_center[None, :, None, None, None]).sum(dim=1, keepdim=True)
+                boundary_target = F.interpolate(torch.sigmoid(boundary_score / max(self.stage2_temperature, 1e-4)), size=student_probability.shape[-3:], mode="trilinear", align_corners=False).detach()
+                boundary_loss = F.binary_cross_entropy(student_probability.clamp(1e-5, 1.0 - 1e-5), boundary_target, reduction="none")
+                boundary_loss = (boundary_loss * boundary_mask).sum() / boundary_mask.sum().clamp_min(1)
+                prior_loss = torch.nan_to_num(prior_loss)
+                boundary_loss = torch.nan_to_num(boundary_loss)
+                if self.stage2_mode == "global":
+                    loss = loss + self.stage2_proto_weight * proto_loss
+                elif self.stage2_mode == "local":
+                    loss = loss + self.stage2_proto_weight * proto_loss
+                elif self.stage2_mode == "prior":
+                    loss = loss + self.stage2_proto_weight * proto_loss + self.stage2_prior_weight * prior_loss
+                elif self.stage2_mode == "full":
+                    loss = loss + self.stage2_proto_weight * proto_loss + self.stage2_prior_weight * prior_loss + self.stage2_boundary_weight * boundary_loss
+                stage2_extra["stage2_prior_mean"] = float(prior.detach().mean().item())
         threshold = float(self.config["method"]["probability_threshold"])
         prototype_voxels = int((prototype >= threshold).sum().item())
+        loss = torch.nan_to_num(loss, nan=0.0, posinf=0.0, neginf=0.0)
         return loss, {
             "raw_foreground_voxels": prototype_voxels,
             "refined_foreground_voxels": prototype_voxels,
             "voxels": prototype.numel(),
             "effective": True,
+            **stage2_extra,
         }
 
     def _patch(

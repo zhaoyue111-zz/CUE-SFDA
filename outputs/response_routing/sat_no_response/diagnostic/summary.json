@@ -1,0 +1,17 @@
+{
+  "prompt": "liver cancer",
+  "n_no_response": 17,
+  "sat_nonempty_recovered": 17,
+  "sat_nonempty_recovered_rate": 1.0,
+  "dice_gt_0.1_count": 5,
+  "dice_gt_0.1_rate": 0.29411764705882354,
+  "dice_gt_0.3_count": 5,
+  "dice_gt_0.3_rate": 0.29411764705882354,
+  "dice_gt_0.5_count": 0,
+  "dice_gt_0.5_rate": 0.0,
+  "sat_nonempty_dice_le_0.1_count": 12,
+  "sat_nonempty_dice_le_0.1_rate_of_nonempty": 0.7058823529411765,
+  "mean_dice": 0.10683588560695347,
+  "mean_precision": 0.27158102376805476,
+  "mean_recall": 0.11483802568283934
+}

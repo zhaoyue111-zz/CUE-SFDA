@@ -1,0 +1,6 @@
+metric,auroc,auprc
+sat_prediction_voxels,0.8333333333333334,0.3333333333333333
+voxtell_mean_probability,0.25,0.1
+voxtell_max_probability,0.33333333333333337,0.1111111111111111
+voxtell_top1pct_mean_probability,0.33333333333333337,0.1111111111111111
+voxtell_top5pct_mean_probability,0.25,0.1

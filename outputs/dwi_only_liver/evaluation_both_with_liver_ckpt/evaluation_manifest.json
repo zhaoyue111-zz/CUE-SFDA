@@ -1,0 +1,23 @@
+{
+  "checkpoint": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA/outputs/dwi_only_liver/checkpoints/best_iteration_002100_dice_0.749434.pt",
+  "config": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA/configs/dwi_liver.yaml",
+  "gpu_id": 0,
+  "tasks": [
+    {
+      "task": "liver",
+      "prompt": "liver",
+      "mean_dice": 0.7494339059126675,
+      "mean_iou": 0.6175175384903379,
+      "num_cases": 44,
+      "prediction_dir": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA/outputs/evaluation_both_prompts/liver/predictions"
+    },
+    {
+      "task": "liver_cancer",
+      "prompt": "liver cancer",
+      "mean_dice": 0.29103576933481734,
+      "mean_iou": 0.21905411866191632,
+      "num_cases": 44,
+      "prediction_dir": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA/outputs/evaluation_both_prompts/liver_cancer/predictions"
+    }
+  ]
+}

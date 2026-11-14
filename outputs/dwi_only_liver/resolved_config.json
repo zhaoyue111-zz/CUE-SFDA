@@ -1,0 +1,86 @@
+{
+  "experiment": {
+    "seed": 42,
+    "gpu_id": 0,
+    "output_dir": "outputs/dwi_only_liver_v2"
+  },
+  "data": {
+    "image_dir": "/data/hilab/datasets/WCH_MRI145/DWI/images",
+    "split_json": "/data/hilab/datasets/WCH_MRI145/DWI/split.json",
+    "patch_size": [
+      192,
+      192,
+      192
+    ]
+  },
+  "model": {
+    "voxtell_root": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk",
+    "model_dir": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model",
+    "text_encoder": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/Qwen3-Embedding-4B",
+    "prompt": "liver",
+    "amp": true,
+    "lora_rank": 8,
+    "lora_alpha": 16.0,
+    "lora_dropout": 0.0,
+    "lora_linear_targets": [
+      "text_projection",
+      "final_mask_projection"
+    ]
+  },
+  "method": {
+    "iterations": 3000,
+    "calibration_cases": 0,
+    "num_views": 10,
+    "mixup_alpha": 0.75,
+    "probability_threshold": 0.5,
+    "chebyshev_threshold": 0.8,
+    "quality_threshold": 0.5,
+    "confidence_ema": 0.9,
+    "source_only_confidence": true,
+    "update_confidence_partition": false,
+    "high_quality_sampling_probability": 0.6,
+    "low_quality_views": 3,
+    "style_mix_probability": 0.75,
+    "noise_std": 0.08,
+    "gamma_range": [
+      0.7,
+      1.5
+    ],
+    "random_walk_size": [
+      16,
+      32,
+      32
+    ],
+    "random_walk_steps": 4,
+    "random_walk_alpha": 0.0,
+    "affinity_temperature": 0.15,
+    "random_walk_score_pooling": "average",
+    "preserve_raw_foreground": true,
+    "min_pseudo_foreground_voxels": 64,
+    "min_case_pseudo_foreground_voxels": 1024
+  },
+  "train": {
+    "learning_rate": 5e-06,
+    "weight_decay": 0.0001,
+    "tile_step_size": 0.5,
+    "validation_every": 100,
+    "validate_at_start": true,
+    "max_grad_norm": 1.0,
+    "high_dice_weight": 1.0,
+    "high_bce_weight": 1.0,
+    "high_foreground_weight": 5.0,
+    "balance_high_bce": true,
+    "low_consistency_weight": 1.0,
+    "low_foreground_weight": 5.0,
+    "balance_low_consistency": true,
+    "low_entropy_weight": 0.0,
+    "log_every": 10,
+    "save_every": 100
+  },
+  "evaluation": {
+    "tile_step_size": 0.5,
+    "threshold": 0.5,
+    "label_value": 1
+  },
+  "_config_path": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA/configs/dwi_liver.yaml"
+}
