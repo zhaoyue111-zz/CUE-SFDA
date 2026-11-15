@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import nullcontext
 import json
 import random
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -33,6 +34,8 @@ from cue_sfda.modeling.lora import lora_disabled
 from cue_sfda.utils import save_json
 from cue_sfda.sat_rescue import evaluate_sat_assisted
 from cue_sfda.method.retrieval import StableSupportMemory
+from cue_sfda.method.consensus import ConsensusCache, ConsensusCacheBuilder
+from cue_sfda.modeling.voxtell import load_prompt_embedding
 
 
 class CUETrainer:
@@ -107,9 +110,35 @@ class CUETrainer:
         self.best_iteration: int | None = None
         self.best_checkpoint_path: Path | None = None
         self.last_validation_iteration: int | None = None
+        self.patience_counter = 0
+        self.stop_iteration: int | None = None
+        self.stop_reason: str | None = None
         self.calibration_foreground_counts: dict[str, int] = {}
         self.skipped_case_names: set[str] = set()
         self.routing_metadata: dict[str, int | float | str] = {}
+        consensus = config.get("consensus", {})
+        self.consensus_mode = str(consensus.get("mode", "none"))
+        self.consensus_enabled = self.consensus_mode != "none"
+        self.consensus_cache: ConsensusCache | None = None
+        self.consensus_case_memory: dict[str, dict] = {}
+        self.consensus_memory_case: str | None = None
+        self.refresh_cycle = 0
+        self.max_refresh_cycles = int(consensus.get("max_refresh_cycles", 0))
+        self.seen_cases_since_refresh: set[str] = set()
+        self.refresh_history: list[dict] = []
+        self.consensus_prompt_embeddings: dict[str, torch.Tensor] = {}
+        self.consensus_refresh_in_progress = False
+        if self.consensus_enabled:
+            cache_dir = consensus.get("cache_dir") or str(self.output_dir / "consensus_cache")
+            self.consensus_cache = ConsensusCache(cache_dir)
+            standard_prompt = str(consensus.get("standard_prompt", config["model"]["prompt"]))
+            self.consensus_prompt_embeddings[standard_prompt] = self.embedding
+            for prompt in consensus.get("prompts", config["method"].get("routing_prompts", [])):
+                prompt = str(prompt)
+                if prompt not in self.consensus_prompt_embeddings:
+                    self.consensus_prompt_embeddings[prompt] = load_prompt_embedding(
+                        config, prompt, self.output_dir / "prompt_cache", self.device
+                    )
         rescue = config.get("sat_rescue", {})
         self.sat_proposal_dir = Path(rescue["proposal_dir"]).expanduser() if rescue.get("proposal_dir") else None
         self.sat_gate_csv = Path(rescue["gate_csv"]).expanduser() if rescue.get("gate_csv") else None
@@ -141,6 +170,13 @@ class CUETrainer:
                 self._initialize_routing(str(self.config["method"].get("routing_mode", "original")))
         elif confidence_partition is not None:
             self._load_partition(confidence_partition)
+        if self.consensus_enabled:
+            self._ensure_consensus_cache()
+        else:
+            save_json(
+                {"mode": "none", "cache_version": None, "routing_frozen": True},
+                self.output_dir / "consensus_cache_metadata.json",
+            )
         if (
             self.start_iteration == 0
             and bool(self.config["train"].get("validate_at_start", True))
@@ -156,7 +192,7 @@ class CUETrainer:
             self._save_latest(self.start_iteration)
         method_config = self.config["method"]
         train_config = self.config["train"]
-        total_iterations = int(method_config["iterations"])
+        total_iterations = int(method_config.get("max_iterations", method_config["iterations"]))
         save_every = int(train_config["save_every"])
         log_every = int(train_config["log_every"])
         validation_every = int(train_config.get("validation_every", 0))
@@ -186,6 +222,12 @@ class CUETrainer:
             case = self.train_cases[case_index]
             partner = self.train_cases[partner_index]
             metrics = self._train_step(case, partner)
+            # Refresh coverage is based on cases actually sampled, not on
+            # whether their pseudo-label happened to contain an effective
+            # patch.  Otherwise all-background/skipped cases could prevent a
+            # dynamic teacher from ever refreshing.
+            if self.consensus_enabled:
+                self.seen_cases_since_refresh.add(case.name)
             if iteration == 1 or iteration % log_every == 0:
                 self.logger.info(
                     "iteration=%d/%d case=%s patches=%d effective_patches=%d skipped_patches=%d branch=%s loss=%.6f confidence=%.4f raw_foreground=%.6f refined_foreground=%.6f split=%.4f",
@@ -208,10 +250,23 @@ class CUETrainer:
             should_validate = should_validate and iteration % validation_every == 0
             should_validate = should_validate and bool(self.validation_cases)
             if should_validate:
-                self._validate(iteration)
-        if self.validation_cases and self.last_validation_iteration != total_iterations:
-            self._validate(total_iterations)
-        latest_path = self._save_latest(total_iterations)
+                should_stop = self._validate(iteration)
+                if should_stop:
+                    self.stop_iteration = iteration
+                    self.stop_reason = "early_stopping_patience"
+                    break
+            if self._refresh_ready():
+                self._refresh_consensus(iteration)
+        if self.stop_iteration is None and self.validation_cases and self.last_validation_iteration != total_iterations:
+            should_stop = self._validate(total_iterations)
+            if should_stop:
+                self.stop_iteration = total_iterations
+                self.stop_reason = "early_stopping_patience"
+        if self.stop_iteration is None:
+            self.stop_iteration = total_iterations
+            self.stop_reason = "max_iterations"
+        final_iteration = self.stop_iteration
+        latest_path = self._save_latest(final_iteration)
         self.logger.info("Saved latest LoRA checkpoint: %s", latest_path)
         return latest_path
 
@@ -264,11 +319,141 @@ class CUETrainer:
             metadata["no_response"],
         )
 
+    def _ensure_consensus_cache(self) -> None:
+        if self.consensus_cache is None:
+            return
+        expected = {case.name for case in self.train_cases}
+        metadata = self.consensus_cache.read_metadata()
+        cached = set(metadata.get("case_ids", []))
+        expected_prompts = [str(v) for v in self.config.get("consensus", {}).get("prompts", [])]
+        compatible = int(metadata.get("num_views", -1)) == int(self.config["method"]["num_views"]) and [str(v) for v in metadata.get("prompts", [])] == expected_prompts
+        if compatible and cached == expected and all(self.consensus_cache.has_case(case.name) for case in self.train_cases):
+            if self.start_iteration == 0 and not self.refresh_history:
+                self.refresh_cycle = int(metadata.get("cache_version", 0))
+            save_json({"mode": self.consensus_mode, **metadata}, self.output_dir / "consensus_cache_metadata.json")
+            self.logger.info("Using consensus cache=%s version=%d cases=%d", self.consensus_cache.root, self.refresh_cycle, len(cached))
+            return
+        self.logger.info("Consensus cache is incomplete; creating frozen source cache version 0")
+        builder = ConsensusCacheBuilder(
+            self.config,
+            self.runtime,
+            self.store,
+            StrongViewGenerator(self.config["method"], int(self.config["experiment"]["seed"]) + 10000),
+            self.consensus_prompt_embeddings,
+            self.logger,
+        )
+        builder.disable_lora = True
+        builder.build(self.train_cases, self.consensus_cache, cycle=0, metadata_extra={"routing_frozen": True})
+        if self.start_iteration == 0 and not self.refresh_history:
+            self.refresh_cycle = 0
+        save_json({"mode": self.consensus_mode, **self.consensus_cache.read_metadata()}, self.output_dir / "consensus_cache_metadata.json")
+        self._write_refresh_history()
+
+    def _refresh_ready(self) -> bool:
+        if self.consensus_mode not in {"dynamic_hard", "dynamic_ema"}:
+            return False
+        if self.max_refresh_cycles > 0 and self.refresh_cycle >= self.max_refresh_cycles:
+            return False
+        if self.consensus_refresh_in_progress:
+            return False
+        return self.seen_cases_since_refresh == {case.name for case in self.train_cases}
+
+    def _refresh_consensus(self, iteration: int) -> None:
+        if self.consensus_cache is None:
+            return
+        self.consensus_refresh_in_progress = True
+        self.refresh_cycle += 1
+        cycle = self.refresh_cycle
+        before = self.refresh_history[-1]["trigger_iteration"] if self.refresh_history else 0
+        teacher_cache = self.consensus_cache
+        temporary_root = self.output_dir / f".consensus_refresh_{cycle:04d}"
+        if temporary_root.exists():
+            shutil.rmtree(temporary_root)
+        target_cache = ConsensusCache(temporary_root) if self.consensus_mode == "dynamic_ema" else teacher_cache
+        builder = ConsensusCacheBuilder(
+            self.config,
+            self.runtime,
+            self.store,
+            StrongViewGenerator(self.config["method"], int(self.config["experiment"]["seed"]) + 10000 + cycle),
+            self.consensus_prompt_embeddings,
+            self.logger,
+        )
+        builder.disable_lora = False
+        was_training = self.model.training
+        self.model.eval()
+        try:
+            builder.build(self.train_cases, target_cache, cycle=cycle, metadata_extra={"routing_frozen": True, "teacher_type": "student_snapshot"})
+            if self.consensus_mode == "dynamic_ema":
+                beta = float(self.config.get("consensus", {}).get("cache_ema_beta", 0.7))
+                self._merge_ema_cache(teacher_cache, target_cache, beta, cycle)
+            else:
+                teacher_cache.write_metadata({**target_cache.read_metadata(), "cache_version": cycle, "teacher_type": "student_snapshot"})
+        finally:
+            self.model.train(was_training)
+            if temporary_root.exists():
+                shutil.rmtree(temporary_root)
+            self.consensus_refresh_in_progress = False
+        covered = len(self.seen_cases_since_refresh)
+        self.refresh_history.append(
+            {
+                "refresh_cycle": cycle,
+                "trigger_iteration": int(iteration),
+                "covered_cases": int(covered),
+                "iterations_since_previous_refresh": int(iteration - before),
+                "teacher_type": "student_snapshot",
+                "cache_ema_beta": float(self.config.get("consensus", {}).get("cache_ema_beta", 0.7)) if self.consensus_mode == "dynamic_ema" else None,
+            }
+        )
+        self.seen_cases_since_refresh.clear()
+        self.consensus_case_memory.clear()
+        self.consensus_memory_case = None
+        self._write_refresh_history()
+        self.logger.info("consensus refresh complete cycle=%d iteration=%d", cycle, iteration)
+
+    def _merge_ema_cache(self, old: ConsensusCache, new: ConsensusCache, beta: float, cycle: int) -> None:
+        beta = float(np.clip(beta, 0.0, 1.0))
+        for case in self.train_cases:
+            old_data = old.load_case(case)
+            new_data = new.load_case(case)
+            merged = {}
+            for field in ("image_consensus_probability", "prompt_consensus_probability", "image_voxel_consistency", "prompt_voxel_consistency", "joint_voxel_confidence", "joint_probability"):
+                merged[field] = beta * old_data[field] + (1.0 - beta) * new_data[field]
+            geometry = dict(old_data["geometry"])
+            geometry["cache_model_version"] = int(cycle)
+            geometry["refresh_cycle"] = int(cycle)
+            old.save_case(case, merged, geometry, beta * old_data["image_view_case_weights"] + (1.0 - beta) * new_data["image_view_case_weights"], beta * old_data["prompt_case_weights"] + (1.0 - beta) * new_data["prompt_case_weights"])
+        old.write_metadata({**new.read_metadata(), "cache_version": cycle, "teacher_type": "ema_student_snapshot", "cache_ema_beta": beta})
+
+    def _write_refresh_history(self) -> None:
+        save_json(
+            {
+                "cache_version": int(self.refresh_cycle),
+                "refresh_history": self.refresh_history,
+                "seen_cases_since_refresh": sorted(self.seen_cases_since_refresh),
+            },
+            self.output_dir / "refresh_history.json",
+        )
+
     def _sample_case_index(
         self,
         high_indices: list[int],
         low_indices: list[int],
     ) -> int:
+        if self.consensus_enabled:
+            # Dynamic teachers refresh after a complete coverage cycle.  Make
+            # that cycle finite even when the usual quality-stratified random
+            # sampler repeatedly draws the same cases.
+            candidates = high_indices + low_indices
+            unseen = [
+                index
+                for index in candidates
+                if self.train_cases[index].name not in self.seen_cases_since_refresh
+            ]
+            if unseen:
+                selected = int(
+                    torch.randint(len(unseen), (1,), generator=self.generator).item()
+                )
+                return unseen[selected]
         probability = float(
             self.config["method"].get("high_quality_sampling_probability", 0.5)
         )
@@ -382,7 +567,7 @@ class CUETrainer:
                 loss, patch_metrics = self._sat_rescue_loss(image, case, case_slicer, case_volume)
                 branch = "sat_rescue"
             else:
-                loss, patch_metrics = self._low_confidence_loss(image, partner_image)
+                loss, patch_metrics = self._low_confidence_loss(image, partner_image, case, case_slicer)
                 branch = "low"
             if not torch.isfinite(loss):
                 message = f"Non-finite loss for {case.name} patch {patch_index}"
@@ -595,7 +780,11 @@ class CUETrainer:
         return loss, patch_metrics
 
     def _low_confidence_loss(
-        self, image: torch.Tensor, partner: torch.Tensor
+        self,
+        image: torch.Tensor,
+        partner: torch.Tensor,
+        case: CaseRecord | None = None,
+        case_slicer: tuple[slice, slice, slice] | None = None,
     ) -> tuple[torch.Tensor, dict[str, int | bool]]:
         view_count = int(self.config["method"].get("low_quality_views", 3))
         strong_views = self.views.make_views(image, partner, count=view_count + 2)[1:]
@@ -611,15 +800,28 @@ class CUETrainer:
                 aligned_probabilities.append(view.align(probability))
         prototype = torch.stack(aligned_probabilities).mean(dim=0)
         self.model.train()
-        with self._autocast():
-            if self.stage2_mode != "none":
-                student_logits, student_features = self.model(
-                    student_view.image, self.embedding, return_features=True
+        language_diagnostics = None
+        # The language-margin branch must use VoxTell's final mask response.
+        # Reusing this forward's graph is important on 11 GB cards: a second
+        # diagnostic forward while the consistency graph is alive OOMs during
+        # backward.  The response is aligned to the original patch, so this
+        # branch intentionally uses the unaugmented image as its student view.
+        if self.consensus_mode == "joint_language":
+            with self._autocast():
+                student_logits, language_diagnostics = self.model(
+                    image, self.embedding, return_diagnostics=True
                 )
-            else:
-                student_logits = self.model(student_view.image, self.embedding)
-        student_probability = torch.sigmoid(student_logits.float())
-        student_probability = student_view.align(student_probability)
+            student_probability = torch.sigmoid(student_logits.float())
+        else:
+            with self._autocast():
+                if self.stage2_mode != "none":
+                    student_logits, student_features = self.model(
+                        student_view.image, self.embedding, return_features=True
+                    )
+                else:
+                    student_logits = self.model(student_view.image, self.embedding)
+            student_probability = torch.sigmoid(student_logits.float())
+            student_probability = student_view.align(student_probability)
         train_config = self.config["train"]
         consistency = bernoulli_kl_divergence(
             prototype,
@@ -631,6 +833,30 @@ class CUETrainer:
             float(train_config["low_consistency_weight"]) * consistency
             + float(train_config["low_entropy_weight"]) * entropy
         )
+        consensus_extra: dict[str, float] = {}
+        if self.consensus_enabled and case is not None and case_slicer is not None:
+            consensus_patch = self._consensus_patch(case, case_slicer)
+            field = self._consensus_probability_field()
+            confidence_field = self._consensus_confidence_field()
+            target = consensus_patch[field].to(self.device).unsqueeze(0)
+            confidence = consensus_patch[confidence_field].to(self.device).unsqueeze(0).clamp(0.0, 1.0)
+            threshold = float(self.config.get("consensus", {}).get("confidence_threshold", 0.0))
+            if threshold > 0.0:
+                confidence = confidence * (confidence >= threshold).float()
+            consensus_loss = masked_binary_cross_entropy(
+                student_probability,
+                target.detach(),
+                confidence.detach().clamp_min(1e-3),
+            )
+            weight = float(self.config.get("consensus", {}).get("lambda_consensus", 0.05))
+            loss = loss + weight * consensus_loss
+            consensus_extra["consensus_loss"] = float(consensus_loss.detach().item())
+            if self.consensus_mode == "joint_language":
+                language_loss, language_metrics = self._language_margin_loss(
+                    image, consensus_patch, diagnostics=language_diagnostics
+                )
+                loss = loss + float(self.config.get("consensus", {}).get("lambda_language", 0.02)) * language_loss
+                consensus_extra.update(language_metrics)
         stage2_extra: dict[str, float] = {}
         if self.stage2_mode != "none" and self.stage2_memory.entries:
             # Prior-Fixed is intentionally the old implementation: weighted
@@ -715,7 +941,69 @@ class CUETrainer:
             "voxels": prototype.numel(),
             "effective": True,
             **stage2_extra,
+            **consensus_extra,
         }
+
+    def _consensus_probability_field(self) -> str:
+        if self.consensus_mode == "image":
+            return "image_consensus_probability"
+        if self.consensus_mode == "prompt":
+            return "prompt_consensus_probability"
+        return "joint_probability"
+
+    def _consensus_confidence_field(self) -> str:
+        if self.consensus_mode == "image":
+            return "image_voxel_consistency"
+        if self.consensus_mode == "prompt":
+            return "prompt_voxel_consistency"
+        return "joint_voxel_confidence"
+
+    def _consensus_patch(self, case: CaseRecord, slicer: tuple[slice, slice, slice]) -> dict[str, torch.Tensor]:
+        if self.consensus_cache is None:
+            raise RuntimeError("consensus cache is not initialized")
+        if self.consensus_memory_case != case.name:
+            self.consensus_case_memory = self.consensus_cache.load_case(case)
+            self.consensus_memory_case = case.name
+        result = {}
+        for field in (
+            "image_consensus_probability",
+            "prompt_consensus_probability",
+            "image_voxel_consistency",
+            "prompt_voxel_consistency",
+            "joint_voxel_confidence",
+            "joint_probability",
+        ):
+            array = self.consensus_case_memory[field]
+            result[field] = torch.from_numpy(np.ascontiguousarray(array[(slice(None), *slicer)]))
+        return result
+
+    def _language_margin_loss(
+        self,
+        image: torch.Tensor,
+        consensus_patch: dict[str, torch.Tensor],
+        diagnostics: dict[str, torch.Tensor] | None = None,
+    ) -> tuple[torch.Tensor, dict[str, float]]:
+        """Apply the margin to VoxTell's own final mask response, not raw text/D5."""
+        if diagnostics is None:
+            with self._autocast():
+                _, diagnostics = self.model(image, self.embedding, return_diagnostics=True)
+        response = diagnostics.get("mask_response")
+        if response is None:
+            raise RuntimeError("VoxTell runtime did not return final mask response diagnostics")
+        response = response[:, 0].float()
+        probability = consensus_patch["joint_probability"].to(self.device).unsqueeze(0)[:, 0]
+        confidence = consensus_patch["joint_voxel_confidence"].to(self.device).unsqueeze(0)[:, 0]
+        cfg = self.config.get("consensus", {})
+        fg = (probability >= float(cfg.get("tau_fg", 0.7))) & (confidence >= float(cfg.get("tau_conf", 0.5)))
+        bg = (probability <= float(cfg.get("tau_bg", 0.3))) & (confidence >= float(cfg.get("tau_conf", 0.5)))
+        min_voxels = int(cfg.get("language_min_voxels", 8))
+        if int(fg.sum()) < min_voxels or int(bg.sum()) < min_voxels:
+            return response.sum() * 0.0, {"language_fg_voxels": float(fg.sum()), "language_bg_voxels": float(bg.sum()), "language_loss": 0.0}
+        r_fg = response[fg].mean()
+        r_bg = response[bg].mean()
+        margin = float(cfg.get("margin", 0.1))
+        loss = F.relu(response.new_tensor(margin) - r_fg + r_bg)
+        return loss, {"language_fg_voxels": float(fg.sum()), "language_bg_voxels": float(bg.sum()), "language_loss": float(loss.detach().item())}
 
     def _patch(
         self,
@@ -725,7 +1013,7 @@ class CUETrainer:
         patch = self.store.extract_patch(volume, slicer)
         return patch.unsqueeze(0).to(self.device, non_blocking=True)
 
-    def _validate(self, iteration: int) -> None:
+    def _validate(self, iteration: int) -> bool:
         if self.validation_gt_path is None:
             raise ValueError("Periodic validation requires --gt-path")
         validation_dir = self.output_dir / "validation" / f"iteration_{iteration:06d}"
@@ -738,7 +1026,7 @@ class CUETrainer:
             self.validation_gt_path,
             validation_dir,
             self.logger,
-            save_predictions=True,
+            save_predictions=bool(self.config["train"].get("save_validation_predictions", False)),
         )
         assisted = None
         if self.sat_proposal_dir:
@@ -747,7 +1035,10 @@ class CUETrainer:
         self.last_validation_iteration = iteration
         mean_dice = float(summary["mean_dice"])
         if mean_dice > self.best_dice:
+            self.patience_counter = 0
             self._save_best(iteration, mean_dice)
+        else:
+            self.patience_counter += 1
         if assisted is not None and assisted["assisted_mean_dice"] > self.best_sat_dice:
             self.best_sat_dice = float(assisted["assisted_mean_dice"])
             self._save(self.output_dir / "checkpoints" / "best_sat_assisted.pt", iteration)
@@ -760,6 +1051,23 @@ class CUETrainer:
         )
         if assisted is not None:
             self.logger.info("validation_iteration=%d SAT-assisted mean_dice=%.6f mean_iou=%.6f gate_pass=%d", iteration, assisted["assisted_mean_dice"], assisted["assisted_mean_iou"], assisted["sat_gate_pass"])
+        patience = int(self.config["train"].get("early_stopping_patience", 10))
+        should_stop = patience > 0 and self.patience_counter >= patience
+        self._save_early_stopping()
+        return should_stop
+
+    def _save_early_stopping(self) -> None:
+        save_json(
+            {
+                "best_dice": None if self.best_dice == float("-inf") else self.best_dice,
+                "best_iteration": self.best_iteration,
+                "patience_counter": self.patience_counter,
+                "early_stopping_patience": int(self.config["train"].get("early_stopping_patience", 10)),
+                "stop_iteration": self.stop_iteration,
+                "stop_reason": self.stop_reason,
+            },
+            self.output_dir / "early_stopping.json",
+        )
 
     def _autocast(self):
         if not self.amp_enabled:
@@ -780,7 +1088,19 @@ class CUETrainer:
             trainer_generator_state=self.generator.get_state(),
             view_generator_state=self.views.generator.get_state(),
             view_python_generator_state=self.views.python_generator.getstate(),
+            trainer_state={
+                "patience_counter": int(self.patience_counter),
+                "stop_iteration": self.stop_iteration,
+                "stop_reason": self.stop_reason,
+                "refresh_cycle": int(self.refresh_cycle),
+                "seen_cases_since_refresh": sorted(self.seen_cases_since_refresh),
+                "refresh_history": self.refresh_history,
+                "consensus_mode": self.consensus_mode,
+            },
+            scaler_state=self.scaler.state_dict() if self.amp_enabled else None,
         )
+        self._save_early_stopping()
+        self._write_refresh_history()
         return path
 
     def _save_latest(self, iteration: int) -> Path:
@@ -828,6 +1148,15 @@ class CUETrainer:
             )
             if matches:
                 self.best_checkpoint_path = matches[0]
+        trainer_state = checkpoint.get("trainer_state", {})
+        if self.amp_enabled and checkpoint.get("scaler_state"):
+            self.scaler.load_state_dict(checkpoint["scaler_state"])
+        self.patience_counter = int(trainer_state.get("patience_counter", 0))
+        self.stop_iteration = trainer_state.get("stop_iteration")
+        self.stop_reason = trainer_state.get("stop_reason")
+        self.refresh_cycle = int(trainer_state.get("refresh_cycle", 0))
+        self.seen_cases_since_refresh = set(str(v) for v in trainer_state.get("seen_cases_since_refresh", []))
+        self.refresh_history = list(trainer_state.get("refresh_history", []))
         scores = checkpoint.get("confidence_scores", {})
         if scores:
             self.partition.initialize(scores)

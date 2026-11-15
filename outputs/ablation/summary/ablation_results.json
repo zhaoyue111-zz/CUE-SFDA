@@ -1,0 +1,72 @@
+[
+  {
+    "Method": "C baseline",
+    "Best Iter": "",
+    "Stop Iter": "",
+    "Dice": "0.28333568879757304",
+    "mIoU": "0.2174575154368061",
+    "Precision": "0.3691844968589159",
+    "Recall": "0.3363288847955853",
+    "Refresh Cycles": 0
+  },
+  {
+    "Method": "Image-only",
+    "Best Iter": 1050,
+    "Stop Iter": 1550,
+    "Dice": "0.33788263608093916",
+    "mIoU": "0.25865310642920014",
+    "Precision": "0.2956611249372133",
+    "Recall": "0.5607731821182267",
+    "Refresh Cycles": 0
+  },
+  {
+    "Method": "Prompt-only",
+    "Best Iter": 1050,
+    "Stop Iter": 1550,
+    "Dice": "0.33776611608901663",
+    "mIoU": "0.2585150246684824",
+    "Precision": "0.295442258320331",
+    "Recall": "0.560771402918065",
+    "Refresh Cycles": 0
+  },
+  {
+    "Method": "Cross-modal",
+    "Best Iter": 1050,
+    "Stop Iter": 1550,
+    "Dice": "0.3373779453683947",
+    "mIoU": "0.2582141550021626",
+    "Precision": "0.29484168012958234",
+    "Recall": "0.5603032290906256",
+    "Refresh Cycles": 0
+  },
+  {
+    "Method": "Cross-modal+Language",
+    "Best Iter": 800,
+    "Stop Iter": 1300,
+    "Dice": "0.33949024657868015",
+    "mIoU": "0.25985461530967835",
+    "Precision": "0.3276317592345077",
+    "Recall": "0.52064635382325",
+    "Refresh Cycles": 0
+  },
+  {
+    "Method": "Dynamic-hard",
+    "Best Iter": 1250,
+    "Stop Iter": 1750,
+    "Dice": "0.34441562236682066",
+    "mIoU": "0.2638975594426639",
+    "Precision": "0.29987138343330827",
+    "Recall": "0.5748004052227048",
+    "Refresh Cycles": 1
+  },
+  {
+    "Method": "Dynamic-EMA",
+    "Best Iter": 850,
+    "Stop Iter": 1350,
+    "Dice": "0.33677436798348376",
+    "mIoU": "0.2573029472699528",
+    "Precision": "0.30192264283624687",
+    "Recall": "0.5429202045602874",
+    "Refresh Cycles": 1
+  }
+]

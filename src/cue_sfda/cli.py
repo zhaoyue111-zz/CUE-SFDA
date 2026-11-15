@@ -43,6 +43,7 @@ def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--device")
     parser.add_argument("--gpu-id", type=int)
     parser.add_argument("--iterations", type=int)
+    parser.add_argument("--max-iterations", type=int)
     parser.add_argument("--calibration-cases", type=int)
     parser.add_argument(
         "--routing-mode",
@@ -53,6 +54,8 @@ def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
         choices=("none", "global", "local", "prior", "prior_fixed", "weighted_prior", "clustered_prior", "clustered_boundary", "full"),
     )
     parser.add_argument("--stage2-top-k", type=int)
+    parser.add_argument("--consensus-mode", choices=("none", "image", "prompt", "joint", "joint_language", "dynamic_hard", "dynamic_ema"))
+    parser.add_argument("--consensus-cache", type=Path)
 
 
 def main() -> None:

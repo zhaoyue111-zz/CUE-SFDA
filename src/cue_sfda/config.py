@@ -24,8 +24,9 @@ def validate_config(config: dict[str, Any]) -> None:
     missing = required.difference(config)
     if missing:
         raise KeyError(f"Missing configuration sections: {sorted(missing)}")
-    if int(config["method"]["iterations"]) <= 0:
-        raise ValueError("method.iterations must be positive")
+    iterations = config["method"].get("iterations", config["method"].get("max_iterations", 0))
+    if int(iterations) <= 0:
+        raise ValueError("method.iterations/max_iterations must be positive")
     gpu_id = config["experiment"].get("gpu_id")
     if gpu_id is not None and int(gpu_id) < 0:
         raise ValueError("experiment.gpu_id must be non-negative")
@@ -74,6 +75,21 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError("train.high_foreground_weight must be at least 1")
     if float(config["train"].get("low_foreground_weight", 1.0)) < 1.0:
         raise ValueError("train.low_foreground_weight must be at least 1")
+    consensus = config.get("consensus", {})
+    mode = str(consensus.get("mode", "none"))
+    valid_modes = {"none", "image", "prompt", "joint", "joint_language", "dynamic_hard", "dynamic_ema"}
+    if mode not in valid_modes:
+        raise ValueError(f"invalid consensus.mode: {mode}")
+    prompts = consensus.get("prompts", config["method"].get("routing_prompts", []))
+    if mode != "none" and not prompts:
+        raise ValueError("consensus.prompts must be non-empty when consensus is enabled")
+    if float(consensus.get("lambda_consensus", 0.05)) < 0:
+        raise ValueError("consensus.lambda_consensus cannot be negative")
+    if float(consensus.get("lambda_language", 0.01)) < 0:
+        raise ValueError("consensus.lambda_language cannot be negative")
+    patience = int(config["train"].get("early_stopping_patience", 10))
+    if patience < 0:
+        raise ValueError("train.early_stopping_patience cannot be negative")
 
 
 def apply_overrides(config: dict[str, Any], args: Any) -> dict[str, Any]:
@@ -88,6 +104,10 @@ def apply_overrides(config: dict[str, Any], args: Any) -> dict[str, Any]:
         config["experiment"]["gpu_id"] = int(args.gpu_id)
     if getattr(args, "iterations", None) is not None:
         config["method"]["iterations"] = int(args.iterations)
+        config["method"]["max_iterations"] = int(args.iterations)
+    if getattr(args, "max_iterations", None) is not None:
+        config["method"]["iterations"] = int(args.max_iterations)
+        config["method"]["max_iterations"] = int(args.max_iterations)
     if getattr(args, "calibration_cases", None) is not None:
         config["method"]["calibration_cases"] = int(args.calibration_cases)
     if getattr(args, "routing_mode", None):
@@ -96,5 +116,9 @@ def apply_overrides(config: dict[str, Any], args: Any) -> dict[str, Any]:
         config.setdefault("stage2", {})["mode"] = str(args.stage2_mode)
     if getattr(args, "stage2_top_k", None) is not None:
         config.setdefault("stage2", {})["top_k"] = int(args.stage2_top_k)
+    if getattr(args, "consensus_mode", None):
+        config.setdefault("consensus", {})["mode"] = str(args.consensus_mode)
+    if getattr(args, "consensus_cache", None):
+        config.setdefault("consensus", {})["cache_dir"] = str(args.consensus_cache)
     validate_config(config)
     return config

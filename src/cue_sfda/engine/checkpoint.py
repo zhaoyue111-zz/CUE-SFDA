@@ -22,6 +22,8 @@ def save_checkpoint(
     trainer_generator_state: torch.Tensor | None = None,
     view_generator_state: torch.Tensor | None = None,
     view_python_generator_state: object | None = None,
+    trainer_state: dict | None = None,
+    scaler_state: dict | None = None,
 ) -> Path:
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -36,6 +38,8 @@ def save_checkpoint(
         "best_iteration": (
             None if best_iteration is None else int(best_iteration)
         ),
+        "trainer_state": trainer_state or {},
+        "scaler_state": scaler_state or {},
         "config": config,
         "rng_state": {
             "python": random.getstate(),

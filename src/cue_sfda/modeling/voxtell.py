@@ -19,6 +19,9 @@ from cue_sfda.modeling.lora import (
 )
 
 
+_TORCHVISION_NMS_LIBRARY = None
+
+
 class DynamicVoxTell(nn.Module):
     """VoxTell forward pass with positional encodings derived from patch size."""
 
@@ -37,12 +40,48 @@ class DynamicVoxTell(nn.Module):
         text_embedding: torch.Tensor,
         return_features: bool = False,
         return_decoder_outputs: bool = False,
-    ) -> torch.Tensor | list[torch.Tensor] | tuple[torch.Tensor, torch.Tensor]:
+        return_diagnostics: bool = False,
+    ) -> torch.Tensor | list[torch.Tensor] | tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, dict]:
         if tuple(image.shape[-3:]) == self.native_patch_size:
+            native_text_embedding = text_embedding
+            if native_text_embedding.shape[0] == 1 and image.shape[0] > 1:
+                native_text_embedding = native_text_embedding.expand(
+                    (image.shape[0], *native_text_embedding.shape[1:])
+                )
+            if return_diagnostics:
+                prediction, diagnostics = self.source_model(
+                    image,
+                    native_text_embedding,
+                    return_diagnostics=True,
+                    return_features=True,
+                )
+                raw_mask = diagnostics.get("mask_embedding")
+                decoder_feature = diagnostics.get("d5_pre_head")
+                projected_mask = None
+                mask_response = None
+                if raw_mask is not None and hasattr(self.source_model, "project_to_decoder_channels"):
+                    projected_mask = self.source_model.project_to_decoder_channels[0](raw_mask)
+                    if decoder_feature is not None:
+                        mask_response = torch.einsum(
+                            "b c d h w, b n c -> b n d h w",
+                            decoder_feature[:, 0] if decoder_feature.ndim == 6 else decoder_feature,
+                            projected_mask,
+                        )
+                diagnostics = dict(diagnostics)
+                diagnostics.update(
+                    {
+                        "mask_embedding_projected": projected_mask,
+                        "decoder_feature": decoder_feature,
+                        "mask_response": mask_response,
+                    }
+                )
+                if isinstance(prediction, list):
+                    prediction = prediction[0]
+                return prediction, diagnostics
             if return_features:
                 prediction, diagnostics = self.source_model(
                     image,
-                    text_embedding,
+                    native_text_embedding,
                     return_features=True,
                 )
                 features = diagnostics["d5_pre_head"]
@@ -54,14 +93,18 @@ class DynamicVoxTell(nn.Module):
             if return_decoder_outputs:
                 return self.source_model(
                     image,
-                    text_embedding,
+                    native_text_embedding,
                     return_decoder_outputs=True,
                 )
-            return self.source_model(image, text_embedding)
+            return self.source_model(image, native_text_embedding)
 
         if return_decoder_outputs:
             raise ValueError(
                 "Decoder-stage diagnostics require the native VoxTell patch size"
+            )
+        if return_diagnostics:
+            raise ValueError(
+                "Language-response diagnostics require the native VoxTell patch size"
             )
 
         from positional_encodings.torch_encodings import PositionalEncoding3D
@@ -163,12 +206,24 @@ def _encode_prompt(
     try:
         import torchvision  # noqa: F401
     except Exception:
+        # A failed torchvision import may leave a partially initialized module
+        # in sys.modules; remove it before transformers imports image_utils.
+        for module_name in list(sys.modules):
+            if module_name == "torchvision" or module_name.startswith("torchvision."):
+                sys.modules.pop(module_name, None)
         try:
-            lib = torch.library.Library("torchvision", "DEF")
-            lib.define("nms(Tensor boxes, Tensor scores, float iou_threshold) -> Tensor")
+            global _TORCHVISION_NMS_LIBRARY
+            _TORCHVISION_NMS_LIBRARY = torch.library.Library("torchvision", "DEF")
+            _TORCHVISION_NMS_LIBRARY.define("nms(Tensor boxes, Tensor scores, float iou_threshold) -> Tensor")
         except Exception:
             pass
-    from transformers import AutoModel, AutoTokenizer
+    from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer
+    # Import the concrete Qwen3 classes once so the lazy AutoModel mapping is
+    # populated on transformers versions that do not eagerly export them.
+    try:
+        from transformers.models.qwen3.modeling_qwen3 import Qwen3Model, Qwen3ForCausalLM  # noqa: F401
+    except Exception:
+        pass
     from voxtell.utils.text_embedding import last_token_pool, wrap_with_instruction
 
     tokenizer = AutoTokenizer.from_pretrained(
@@ -177,15 +232,23 @@ def _encode_prompt(
         local_files_only=True,
     )
     dtype = torch.float16 if device.type == "cuda" else torch.float32
-    backbone = (
-        AutoModel.from_pretrained(
+    try:
+        backbone = AutoModel.from_pretrained(
             str(text_encoder),
             local_files_only=True,
             torch_dtype=dtype,
         )
-        .eval()
-        .to(device)
-    )
+    except (ValueError, KeyError):
+        # Qwen3-Embedding checkpoints shipped with some VoxTell releases are
+        # advertised as Qwen3ForCausalLM.  Their final hidden state is the same
+        # embedding source used by the original predictor, while AutoModel is
+        # unavailable in older transformers builds.
+        backbone = AutoModelForCausalLM.from_pretrained(
+            str(text_encoder),
+            local_files_only=True,
+            torch_dtype=dtype,
+        )
+    backbone = backbone.eval().to(device)
     tokens = tokenizer(
         wrap_with_instruction([prompt]),
         padding=True,
@@ -195,7 +258,10 @@ def _encode_prompt(
     )
     tokens = {name: value.to(device) for name, value in tokens.items()}
     with torch.inference_mode():
-        hidden = backbone(**tokens).last_hidden_state
+        outputs = backbone(**tokens, output_hidden_states=True)
+        hidden = getattr(outputs, "last_hidden_state", None)
+        if hidden is None:
+            hidden = outputs.hidden_states[-1]
         embedding = last_token_pool(hidden, tokens["attention_mask"])
         embedding = embedding.reshape(1, 1, -1).float().cpu()
     cache_dir.mkdir(parents=True, exist_ok=True)
