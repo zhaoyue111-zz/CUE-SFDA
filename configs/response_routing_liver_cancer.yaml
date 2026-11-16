@@ -89,6 +89,12 @@ consensus:
   language_min_voxels: 8
   cache_ema_beta: 0.7
   refresh_tile_step_size: 1.0
-  max_refresh_cycles: 1
+  # Zero means unlimited cycles; coverage and optional min interval control
+  # when a refresh is allowed.
+  max_refresh_cycles: 0
+  min_refresh_interval: 150
+  delta_conf: 0.02
+  language_response_threshold: 0.5
+  language_response_variance_threshold: 0.08
 stage2:
   mode: none

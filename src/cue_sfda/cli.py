@@ -54,7 +54,7 @@ def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
         choices=("none", "global", "local", "prior", "prior_fixed", "weighted_prior", "clustered_prior", "clustered_boundary", "full"),
     )
     parser.add_argument("--stage2-top-k", type=int)
-    parser.add_argument("--consensus-mode", choices=("none", "image", "prompt", "joint", "joint_language", "dynamic_hard", "dynamic_ema"))
+    parser.add_argument("--consensus-mode", choices=("none", "image", "prompt", "joint", "joint_language", "dynamic_hard", "dynamic_ema", "dynamic_hard_language", "selective_dynamic", "selective_dynamic_language"))
     parser.add_argument("--consensus-cache", type=Path)
 
 

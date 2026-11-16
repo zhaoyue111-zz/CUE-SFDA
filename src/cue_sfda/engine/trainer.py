@@ -119,11 +119,14 @@ class CUETrainer:
         consensus = config.get("consensus", {})
         self.consensus_mode = str(consensus.get("mode", "none"))
         self.consensus_enabled = self.consensus_mode != "none"
+        if self.consensus_mode in {"dynamic_hard_language", "selective_dynamic_language"}:
+            consensus["language_verification"] = True
         self.consensus_cache: ConsensusCache | None = None
         self.consensus_case_memory: dict[str, dict] = {}
         self.consensus_memory_case: str | None = None
         self.refresh_cycle = 0
         self.max_refresh_cycles = int(consensus.get("max_refresh_cycles", 0))
+        self.min_refresh_interval = int(consensus.get("min_refresh_interval", 0))
         self.seen_cases_since_refresh: set[str] = set()
         self.refresh_history: list[dict] = []
         self.consensus_prompt_embeddings: dict[str, torch.Tensor] = {}
@@ -350,12 +353,22 @@ class CUETrainer:
         self._write_refresh_history()
 
     def _refresh_ready(self) -> bool:
-        if self.consensus_mode not in {"dynamic_hard", "dynamic_ema"}:
+        if self.consensus_mode not in {
+            "dynamic_hard",
+            "dynamic_ema",
+            "dynamic_hard_language",
+            "selective_dynamic",
+            "selective_dynamic_language",
+        }:
             return False
         if self.max_refresh_cycles > 0 and self.refresh_cycle >= self.max_refresh_cycles:
             return False
         if self.consensus_refresh_in_progress:
             return False
+        if self.refresh_history and self.min_refresh_interval > 0:
+            previous = int(self.refresh_history[-1]["trigger_iteration"])
+            if (self.last_validation_iteration or 0) - previous < self.min_refresh_interval:
+                return False
         return self.seen_cases_since_refresh == {case.name for case in self.train_cases}
 
     def _refresh_consensus(self, iteration: int) -> None:
@@ -369,7 +382,9 @@ class CUETrainer:
         temporary_root = self.output_dir / f".consensus_refresh_{cycle:04d}"
         if temporary_root.exists():
             shutil.rmtree(temporary_root)
-        target_cache = ConsensusCache(temporary_root) if self.consensus_mode == "dynamic_ema" else teacher_cache
+        selective = self.consensus_mode in {"selective_dynamic", "selective_dynamic_language"}
+        language_verify = self.consensus_mode in {"dynamic_hard_language", "selective_dynamic_language"}
+        target_cache = ConsensusCache(temporary_root)
         builder = ConsensusCacheBuilder(
             self.config,
             self.runtime,
@@ -382,12 +397,29 @@ class CUETrainer:
         was_training = self.model.training
         self.model.eval()
         try:
-            builder.build(self.train_cases, target_cache, cycle=cycle, metadata_extra={"routing_frozen": True, "teacher_type": "student_snapshot"})
+            original_verification = self.config.get("consensus", {}).get("language_verification", False)
+            self.config.setdefault("consensus", {})["language_verification"] = language_verify
+            try:
+                builder.build(self.train_cases, target_cache, cycle=cycle, metadata_extra={"routing_frozen": True, "teacher_type": "student_snapshot"})
+            finally:
+                self.config["consensus"]["language_verification"] = original_verification
             if self.consensus_mode == "dynamic_ema":
+                refresh_stats = self._cache_change_stats(teacher_cache, target_cache)
                 beta = float(self.config.get("consensus", {}).get("cache_ema_beta", 0.7))
                 self._merge_ema_cache(teacher_cache, target_cache, beta, cycle)
+            elif selective:
+                refresh_stats = self._merge_selective_cache(
+                    teacher_cache,
+                    target_cache,
+                    cycle,
+                    language_verify=language_verify,
+                )
             else:
-                teacher_cache.write_metadata({**target_cache.read_metadata(), "cache_version": cycle, "teacher_type": "student_snapshot"})
+                if language_verify:
+                    refresh_stats = self._filter_dynamic_language_expansion(teacher_cache, target_cache)
+                else:
+                    refresh_stats = self._cache_change_stats(teacher_cache, target_cache)
+                self._replace_cache(teacher_cache, target_cache, cycle)
         finally:
             self.model.train(was_training)
             if temporary_root.exists():
@@ -402,6 +434,7 @@ class CUETrainer:
                 "iterations_since_previous_refresh": int(iteration - before),
                 "teacher_type": "student_snapshot",
                 "cache_ema_beta": float(self.config.get("consensus", {}).get("cache_ema_beta", 0.7)) if self.consensus_mode == "dynamic_ema" else None,
+                **(refresh_stats if "refresh_stats" in locals() else {}),
             }
         )
         self.seen_cases_since_refresh.clear()
@@ -409,6 +442,157 @@ class CUETrainer:
         self.consensus_memory_case = None
         self._write_refresh_history()
         self.logger.info("consensus refresh complete cycle=%d iteration=%d", cycle, iteration)
+
+    @staticmethod
+    def _cache_fields() -> tuple[str, ...]:
+        return (
+            "image_consensus_probability",
+            "prompt_consensus_probability",
+            "image_voxel_consistency",
+            "prompt_voxel_consistency",
+            "joint_voxel_confidence",
+            "joint_probability",
+            "language_response_mean",
+            "language_response_variance",
+        )
+
+    def _replace_cache(self, old: ConsensusCache, new: ConsensusCache, cycle: int) -> None:
+        for case in self.train_cases:
+            data = new.load_case(case)
+            geometry = dict(data["geometry"])
+            geometry.update(cache_model_version=int(cycle), refresh_cycle=int(cycle))
+            old.save_case(
+                case,
+                {field: data[field] for field in self._cache_fields()},
+                geometry,
+                data["image_view_case_weights"],
+                data["prompt_case_weights"],
+            )
+        old.write_metadata({**new.read_metadata(), "cache_version": cycle, "teacher_type": "student_snapshot"})
+
+    def _cache_change_stats(self, old: ConsensusCache, new: ConsensusCache) -> dict[str, float]:
+        total = added = removed = confidence_change = foreground_change = 0
+        for case in self.train_cases:
+            old_data = old.load_case(case)
+            new_data = new.load_case(case)
+            p_old = old_data["joint_probability"]
+            p_new = new_data["joint_probability"]
+            total += int(p_old.size)
+            added += int(((p_new > 0.5) & (p_old <= 0.5)).sum())
+            removed += int(((p_new <= 0.5) & (p_old > 0.5)).sum())
+            foreground_change += int((p_new > 0.5).sum() - (p_old > 0.5).sum())
+            confidence_change += float((new_data["joint_voxel_confidence"] - old_data["joint_voxel_confidence"]).mean())
+        return {
+            "accepted_voxel_ratio": 1.0,
+            "rejected_voxel_ratio": 0.0,
+            "dynamic_added_foreground_voxels": float(added),
+            "dynamic_removed_foreground_voxels": float(removed),
+            "mean_foreground_volume_change": float(foreground_change / max(len(self.train_cases), 1)),
+            "mean_confidence_change": float(confidence_change / max(len(self.train_cases), 1)),
+        }
+
+    def _filter_dynamic_language_expansion(
+        self,
+        old: ConsensusCache,
+        new: ConsensusCache,
+    ) -> dict[str, float]:
+        """Reject unsupported newly added foreground before hard cache replacement."""
+        response_threshold = float(self.config.get("consensus", {}).get("language_response_threshold", 0.5))
+        variance_threshold = float(self.config.get("consensus", {}).get("language_response_variance_threshold", 0.08))
+        total = accepted = rejected = added = removed = foreground_change = confidence_change = 0
+        for case in self.train_cases:
+            old_data = old.load_case(case)
+            new_data = new.load_case(case)
+            p_old = old_data["joint_probability"]
+            p_new = new_data["joint_probability"].copy()
+            expansion = (p_new > 0.5) & (p_old <= 0.5)
+            semantic_ok = (
+                (new_data["language_response_mean"] >= response_threshold)
+                & (new_data["language_response_variance"] <= variance_threshold)
+            )
+            rejected_mask = expansion & ~semantic_ok
+            accepted_mask = expansion & semantic_ok
+            # Unsupported proposals inherit the old teacher probability and
+            # confidence, while the rest of the cache still uses hard refresh.
+            p_new[rejected_mask] = p_old[rejected_mask]
+            new_confidence = new_data["joint_voxel_confidence"].copy()
+            new_confidence[rejected_mask] = old_data["joint_voxel_confidence"][rejected_mask]
+            new_data["joint_probability"] = p_new
+            new_data["joint_voxel_confidence"] = new_confidence
+            geometry = dict(new_data["geometry"])
+            new.save_case(
+                case,
+                {field: new_data[field] for field in self._cache_fields()},
+                geometry,
+                new_data["image_view_case_weights"],
+                new_data["prompt_case_weights"],
+            )
+            total += int(expansion.size)
+            accepted += int(accepted_mask.sum())
+            rejected += int(rejected_mask.sum())
+            added += int(accepted_mask.sum())
+            removed += int(((p_new <= 0.5) & (p_old > 0.5)).sum())
+            foreground_change += int((p_new > 0.5).sum() - (p_old > 0.5).sum())
+            confidence_change += float((new_confidence - old_data["joint_voxel_confidence"]).mean())
+        denominator = max(total, 1)
+        return {
+            "accepted_voxel_ratio": float(accepted / denominator),
+            "rejected_voxel_ratio": float(rejected / denominator),
+            "dynamic_added_foreground_voxels": float(added),
+            "dynamic_removed_foreground_voxels": float(removed),
+            "mean_foreground_volume_change": float(foreground_change / max(len(self.train_cases), 1)),
+            "mean_confidence_change": float(confidence_change / max(len(self.train_cases), 1)),
+        }
+
+    def _merge_selective_cache(
+        self,
+        old: ConsensusCache,
+        new: ConsensusCache,
+        cycle: int,
+        language_verify: bool,
+    ) -> dict[str, float]:
+        delta = float(self.config.get("consensus", {}).get("delta_conf", 0.02))
+        response_threshold = float(self.config.get("consensus", {}).get("language_response_threshold", 0.5))
+        variance_threshold = float(self.config.get("consensus", {}).get("language_response_variance_threshold", 0.08))
+        accepted = rejected = expanded = 0
+        total = foreground_change = confidence_change = 0
+        for case in self.train_cases:
+            old_data = old.load_case(case)
+            new_data = new.load_case(case)
+            p_old = old_data["joint_probability"]
+            p_new = new_data["joint_probability"]
+            c_old = old_data["joint_voxel_confidence"]
+            c_new = new_data["joint_voxel_confidence"]
+            disagreement = np.abs(p_new - p_old) > 1e-6
+            take_new = c_new > (c_old + delta)
+            added_foreground = (p_new > 0.5) & (p_old <= 0.5) & disagreement
+            if language_verify:
+                semantic_ok = (
+                    (new_data["language_response_mean"] >= response_threshold)
+                    & (new_data["language_response_variance"] <= variance_threshold)
+                )
+                take_new &= (~added_foreground) | semantic_ok
+            merged = {}
+            for field in self._cache_fields():
+                merged[field] = np.where(take_new, new_data[field], old_data[field]).astype(np.float32)
+            geometry = dict(old_data["geometry"])
+            geometry.update(cache_model_version=int(cycle), refresh_cycle=int(cycle))
+            old.save_case(case, merged, geometry, new_data["image_view_case_weights"], new_data["prompt_case_weights"])
+            accepted += int(take_new.sum())
+            total += int(take_new.size)
+            rejected += int((disagreement & ~take_new).sum())
+            expanded += int(added_foreground.sum())
+            foreground_change += int(((p_new > 0.5).sum() - (p_old > 0.5).sum()))
+            confidence_change += float((c_new - c_old).mean())
+        old.write_metadata({**new.read_metadata(), "cache_version": cycle, "teacher_type": "selective_student_snapshot", "delta_conf": delta})
+        denominator = max(total, 1)
+        return {
+            "accepted_voxel_ratio": float(accepted / denominator),
+            "rejected_voxel_ratio": float(rejected / denominator),
+            "mean_foreground_volume_change": float(foreground_change / max(len(self.train_cases), 1)),
+            "mean_confidence_change": float(confidence_change / max(len(self.train_cases), 1)),
+            "dynamic_added_foreground_voxels": float(expanded),
+        }
 
     def _merge_ema_cache(self, old: ConsensusCache, new: ConsensusCache, beta: float, cycle: int) -> None:
         beta = float(np.clip(beta, 0.0, 1.0))
@@ -439,21 +623,9 @@ class CUETrainer:
         high_indices: list[int],
         low_indices: list[int],
     ) -> int:
-        if self.consensus_enabled:
-            # Dynamic teachers refresh after a complete coverage cycle.  Make
-            # that cycle finite even when the usual quality-stratified random
-            # sampler repeatedly draws the same cases.
-            candidates = high_indices + low_indices
-            unseen = [
-                index
-                for index in candidates
-                if self.train_cases[index].name not in self.seen_cases_since_refresh
-            ]
-            if unseen:
-                selected = int(
-                    torch.randint(len(unseen), (1,), generator=self.generator).item()
-                )
-                return unseen[selected]
+        # Coverage is an observation about the ordinary C_joint sampler.  It
+        # must never alter that sampler, otherwise static consensus ablations
+        # and dynamic refresh runs no longer share the same protocol.
         probability = float(
             self.config["method"].get("high_quality_sampling_probability", 0.5)
         )
@@ -806,7 +978,11 @@ class CUETrainer:
         # diagnostic forward while the consistency graph is alive OOMs during
         # backward.  The response is aligned to the original patch, so this
         # branch intentionally uses the unaugmented image as its student view.
-        if self.consensus_mode == "joint_language":
+        language_margin_enabled = self.consensus_mode in {
+            "joint_language",
+            "dynamic_hard_language",
+        }
+        if language_margin_enabled:
             with self._autocast():
                 student_logits, language_diagnostics = self.model(
                     image, self.embedding, return_diagnostics=True
@@ -851,7 +1027,7 @@ class CUETrainer:
             weight = float(self.config.get("consensus", {}).get("lambda_consensus", 0.05))
             loss = loss + weight * consensus_loss
             consensus_extra["consensus_loss"] = float(consensus_loss.detach().item())
-            if self.consensus_mode == "joint_language":
+            if language_margin_enabled:
                 language_loss, language_metrics = self._language_margin_loss(
                     image, consensus_patch, diagnostics=language_diagnostics
                 )

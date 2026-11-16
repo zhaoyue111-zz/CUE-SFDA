@@ -77,7 +77,11 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError("train.low_foreground_weight must be at least 1")
     consensus = config.get("consensus", {})
     mode = str(consensus.get("mode", "none"))
-    valid_modes = {"none", "image", "prompt", "joint", "joint_language", "dynamic_hard", "dynamic_ema"}
+    valid_modes = {
+        "none", "image", "prompt", "joint", "joint_language",
+        "dynamic_hard", "dynamic_ema", "dynamic_hard_language",
+        "selective_dynamic", "selective_dynamic_language",
+    }
     if mode not in valid_modes:
         raise ValueError(f"invalid consensus.mode: {mode}")
     prompts = consensus.get("prompts", config["method"].get("routing_prompts", []))

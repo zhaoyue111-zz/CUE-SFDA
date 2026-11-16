@@ -1,0 +1,62 @@
+[
+  {
+    "Method": "C baseline",
+    "Best Iter": 1050,
+    "Stop Iter": 1550,
+    "Dice": "0.33757889748836717",
+    "mIoU": "0.2584106238185781",
+    "Precision": "0.29508043988600263",
+    "Recall": "0.56050743234382",
+    "Refresh Cycles": 0,
+    "Foreground Volume Change": "",
+    "Diagnosis": ""
+  },
+  {
+    "Method": "E_clean_language",
+    "Best Iter": 800,
+    "Stop Iter": 1300,
+    "Dice": "0.33949024657868015",
+    "mIoU": "0.25985461530967835",
+    "Precision": "0.3276317592345077",
+    "Recall": "0.52064635382325",
+    "Refresh Cycles": 0,
+    "Foreground Volume Change": "",
+    "Diagnosis": ""
+  },
+  {
+    "Method": "F_dynamic_hard_language",
+    "Best Iter": 800,
+    "Stop Iter": 1300,
+    "Dice": "0.33951184246746446",
+    "mIoU": "0.2599357368810755",
+    "Precision": "0.32770958507869014",
+    "Recall": "0.5206486138186615",
+    "Refresh Cycles": 2,
+    "Foreground Volume Change": 1262.3663366336634,
+    "Diagnosis": ""
+  },
+  {
+    "Method": "G_selective_dynamic_refresh",
+    "Best Iter": 1050,
+    "Stop Iter": 1550,
+    "Dice": "0.3373827136753053",
+    "mIoU": "0.25822518759060137",
+    "Precision": "0.2948550885596482",
+    "Recall": "0.5603099558109729",
+    "Refresh Cycles": 2,
+    "Foreground Volume Change": 3222.80198019802,
+    "Diagnosis": ""
+  },
+  {
+    "Method": "H_selective_dynamic_language",
+    "Best Iter": 1050,
+    "Stop Iter": 1550,
+    "Dice": "0.3378880243125328",
+    "mIoU": "0.2586462850157997",
+    "Precision": "0.29566033696198724",
+    "Recall": "0.5607096474666342",
+    "Refresh Cycles": 2,
+    "Foreground Volume Change": 3266.4554455445545,
+    "Diagnosis": ""
+  }
+]

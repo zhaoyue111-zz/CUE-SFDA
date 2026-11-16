@@ -1,0 +1,8 @@
+{
+  "best_dice": 0.3373827136753053,
+  "best_iteration": 1050,
+  "patience_counter": 10,
+  "early_stopping_patience": 10,
+  "stop_iteration": 1550,
+  "stop_reason": "early_stopping_patience"
+}

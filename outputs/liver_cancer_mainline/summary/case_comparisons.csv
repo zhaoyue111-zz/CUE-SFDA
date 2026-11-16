@@ -1,0 +1,5 @@
+method,improved_cases,degraded_cases
+E_clean_language,31,12
+F_dynamic_hard_language,31,12
+G_selective_dynamic_refresh,8,29
+H_selective_dynamic_language,21,20

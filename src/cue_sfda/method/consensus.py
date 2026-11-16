@@ -28,7 +28,14 @@ CACHE_FIELDS = (
     "prompt_voxel_consistency",
     "joint_voxel_confidence",
     "joint_probability",
+    # Optional VoxTell-native semantic verification maps.  Older caches do
+    # not contain these fields; ConsensusCache.load_case supplies zeros so
+    # they remain readable and reproducible.
+    "language_response_mean",
+    "language_response_variance",
 )
+
+REQUIRED_CACHE_FIELDS = CACHE_FIELDS[:6]
 
 
 def _softmax(values: np.ndarray, temperature: float) -> np.ndarray:
@@ -99,7 +106,13 @@ class ConsensusCache:
         if not path.is_file():
             raise FileNotFoundError(f"Missing consensus cache for {case.name}: {path}")
         with np.load(path, allow_pickle=False) as data:
-            arrays = {field: data[field].astype(np.float32, copy=False) for field in CACHE_FIELDS}
+            arrays = {
+                field: data[field].astype(np.float32, copy=False)
+                for field in REQUIRED_CACHE_FIELDS
+            }
+            reference = arrays["joint_probability"]
+            arrays["language_response_mean"] = data["language_response_mean"].astype(np.float32, copy=False) if "language_response_mean" in data else np.zeros_like(reference)
+            arrays["language_response_variance"] = data["language_response_variance"].astype(np.float32, copy=False) if "language_response_variance" in data else np.zeros_like(reference)
             arrays["image_view_case_weights"] = data["image_view_case_weights"].astype(np.float32, copy=False)
             arrays["prompt_case_weights"] = data["prompt_case_weights"].astype(np.float32, copy=False)
             geometry = json.loads(str(data["geometry_json"].item()))
@@ -123,7 +136,10 @@ class ConsensusCache:
         self.cases_dir.mkdir(parents=True, exist_ok=True)
         target = self.case_path(case.name)
         temporary = target.with_suffix(".npz.tmp")
-        payload = {field: np.asarray(arrays[field], dtype=np.float32) for field in CACHE_FIELDS}
+        payload = {
+            field: np.asarray(arrays.get(field, np.zeros_like(arrays["joint_probability"])), dtype=np.float32)
+            for field in CACHE_FIELDS
+        }
         payload.update(
             image_view_case_weights=np.asarray(image_weights, dtype=np.float32),
             prompt_case_weights=np.asarray(prompt_weights, dtype=np.float32),
@@ -200,10 +216,13 @@ class ConsensusCacheBuilder:
         was_training = self.runtime.model.training
         self.runtime.model.eval()
         lora_context = lora_disabled(self.runtime.model) if self.disable_lora else nullcontext()
+        verification_enabled = bool(self.config.get("consensus", {}).get("language_verification", False))
         with torch.no_grad(), lora_context:
             image_predictions = []
+            response_predictions = []
             for view_index in range(int(self.config["method"]["num_views"])):
                 per_patch = []
+                response_patches = []
                 for patch_index, slicer in enumerate(self._slicers):
                     image = self.store.extract_patch(volume, slicer).unsqueeze(0).to(self.runtime.device)
                     # Recreate the deterministic view sequence one tile at a
@@ -213,19 +232,47 @@ class ConsensusCacheBuilder:
                     generated = self.views.make_uncertainty_views(image)
                     view = generated[view_index]
                     with self._autocast():
-                        logits = self.runtime.model(view.image, self.prompt_embeddings[str(self.config["consensus"].get("standard_prompt", self.config["model"]["prompt"]))])
+                        if verification_enabled:
+                            logits, diagnostics = self.runtime.model(
+                                view.image,
+                                self.prompt_embeddings[str(self.config["consensus"].get("standard_prompt", self.config["model"]["prompt"]))],
+                                return_diagnostics=True,
+                            )
+                            response = diagnostics.get("mask_response")
+                            if response is None:
+                                raise RuntimeError("VoxTell runtime did not return mask_response for language verification")
+                            response = torch.sigmoid(response.float()[:, 0:1])
+                        else:
+                            logits = self.runtime.model(view.image, self.prompt_embeddings[str(self.config["consensus"].get("standard_prompt", self.config["model"]["prompt"]))])
                     per_patch.append(torch.sigmoid(logits.float())[0, 0].cpu().numpy())
+                    if verification_enabled:
+                        response_patches.append(response[0, 0].cpu().numpy())
                 image_predictions.append(self._stitch_numpy(per_patch, volume.shape[-3:], self._slicers))
+                if verification_enabled:
+                    response_predictions.append(self._stitch_numpy(response_patches, volume.shape[-3:], self._slicers))
             prompt_predictions = []
+            prompt_response_predictions = []
             raw_prompt = self.prompt_embeddings
             for prompt in self.config["consensus"]["prompts"]:
                 per_patch = []
+                response_patches = []
                 for slicer in self._slicers:
                     image = self.store.extract_patch(volume, slicer).unsqueeze(0).to(self.runtime.device)
                     with self._autocast():
-                        logits = self.runtime.model(image, raw_prompt[str(prompt)])
+                        if verification_enabled:
+                            logits, diagnostics = self.runtime.model(image, raw_prompt[str(prompt)], return_diagnostics=True)
+                            response = diagnostics.get("mask_response")
+                            if response is None:
+                                raise RuntimeError("VoxTell runtime did not return mask_response for prompt verification")
+                            response = torch.sigmoid(response.float()[:, 0:1])
+                        else:
+                            logits = self.runtime.model(image, raw_prompt[str(prompt)])
                     per_patch.append(torch.sigmoid(logits.float())[0, 0].cpu().numpy())
+                    if verification_enabled:
+                        response_patches.append(response[0, 0].cpu().numpy())
                 prompt_predictions.append(self._stitch_numpy(per_patch, volume.shape[-3:], self._slicers))
+                if verification_enabled:
+                    prompt_response_predictions.append(self._stitch_numpy(response_patches, volume.shape[-3:], self._slicers))
         self.runtime.model.train(was_training)
         image_tensor = np.stack(image_predictions, axis=0)[:, None]
         prompt_tensor = np.stack(prompt_predictions, axis=0)[:, None]
@@ -233,6 +280,18 @@ class ConsensusCacheBuilder:
         prompt_probability, prompt_confidence, prompt_weights = _consensus(prompt_tensor, self.prompt_temperature)
         joint_confidence = np.sqrt(np.clip(image_confidence * prompt_confidence, 0.0, 1.0)).astype(np.float32)
         joint_probability = (0.5 * image_probability + 0.5 * prompt_probability).astype(np.float32)
+        if verification_enabled:
+            # The response list is one map per image view.  Keep both its mean
+            # and disagreement so selective refresh can down-weight semantic
+            # outliers without introducing a learned gate.
+            # For selective dynamic language verification, disagreement among
+            # the four prompt responses is the semantic uncertainty signal.
+            response_stack = np.stack(prompt_response_predictions or response_predictions, axis=0)
+            response_map = response_stack.mean(axis=0, keepdims=True).astype(np.float32)
+            response_variance = response_stack.var(axis=0, keepdims=True).astype(np.float32)
+        else:
+            response_map = np.zeros_like(joint_probability, dtype=np.float32)
+            response_variance = np.zeros_like(joint_probability, dtype=np.float32)
         cache.save_case(
             case,
             {
@@ -242,6 +301,8 @@ class ConsensusCacheBuilder:
                 "prompt_voxel_consistency": prompt_confidence,
                 "joint_voxel_confidence": joint_confidence,
                 "joint_probability": joint_probability,
+                "language_response_mean": response_map,
+                "language_response_variance": response_variance,
             },
             geometry,
             image_weights,
@@ -265,6 +326,7 @@ class ConsensusCacheBuilder:
         cycle: int,
         metadata_extra: dict | None = None,
     ) -> None:
+        verification_enabled = bool(self.config.get("consensus", {}).get("language_verification", False))
         self.logger.info("building consensus cache: cycle=%d cases=%d", cycle, len(cases))
         for case in cases:
             volume, slicers = self.store.sliding_window(case, self.tile_step_size)
@@ -278,6 +340,7 @@ class ConsensusCacheBuilder:
             "prompts": [str(v) for v in self.config["consensus"]["prompts"]],
             "standard_prompt": str(self.config["consensus"].get("standard_prompt", self.config["model"]["prompt"])),
             "teacher": "frozen_snapshot",
+            "language_verification": verification_enabled,
         }
         if metadata_extra:
             metadata.update(metadata_extra)
