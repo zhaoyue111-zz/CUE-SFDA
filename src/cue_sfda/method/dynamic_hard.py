@@ -70,16 +70,22 @@ def sample_coverage_index(
     seen_cases: set[str],
     high_probability: float,
     generator: torch.Generator,
+    coverage_mode: bool = False,
 ) -> int:
-    """Sample a branch normally, preferring unseen cases until coverage completes."""
+    """Use ordinary stratified sampling or resume-only uniform coverage completion."""
+    if coverage_mode:
+        unseen = [
+            index
+            for index in high_indices + low_indices
+            if case_names[index] not in seen_cases
+        ]
+        if unseen:
+            selected = int(torch.randint(len(unseen), (1,), generator=generator).item())
+            return unseen[selected]
     use_high = bool(torch.rand((), generator=generator) < high_probability)
     selected_branch = high_indices if use_high else low_indices
     other_branch = low_indices if use_high else high_indices
-    candidates = [index for index in selected_branch if case_names[index] not in seen_cases]
-    if not candidates:
-        candidates = [index for index in other_branch if case_names[index] not in seen_cases]
-    if not candidates:
-        candidates = selected_branch or other_branch
+    candidates = selected_branch or other_branch
     selected = int(torch.randint(len(candidates), (1,), generator=generator).item())
     return candidates[selected]
 

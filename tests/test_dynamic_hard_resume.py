@@ -119,6 +119,7 @@ def test_resume_restores_coverage_rng_refresh_count_and_cache_version(
         "dynamic_hard_enabled": True,
         "refresh_cycle": refresh_cycle,
         "seen_cases_since_refresh": seen,
+        "coverage_mode": refresh_cycle == 1,
         "refresh_history": history,
         "branch_sample_counts": {"high": 10, "low": 20},
         "branch_patch_counts": {"high": 30, "low": 60},
@@ -182,6 +183,7 @@ def test_resume_restores_coverage_rng_refresh_count_and_cache_version(
 
     assert trainer.refresh_cycle == refresh_cycle
     assert trainer.seen_cases_since_refresh == set(seen)
+    assert trainer.coverage_mode is (refresh_cycle == 1)
     assert trainer.refresh_history == history
     assert trainer.branch_sample_counts == {"high": 10, "low": 20}
     assert random.random() == expected_python

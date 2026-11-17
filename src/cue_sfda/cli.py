@@ -22,6 +22,14 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common_arguments(train_parser)
     train_parser.add_argument("--gt-path", type=Path)
     train_parser.add_argument("--resume", type=Path)
+    train_parser.add_argument(
+        "--coverage-completion",
+        action="store_true",
+        help=(
+            "On an explicitly resumed Dynamic-hard run, sample unseen primary "
+            "cases uniformly until coverage completes"
+        ),
+    )
     train_parser.add_argument("--confidence-partition", type=Path)
     train_parser.add_argument("--skip-eval", action="store_true")
     evaluation_parser = subparsers.add_parser(
@@ -53,8 +61,19 @@ def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def main() -> None:
-    args = build_parser().parse_args()
+    parser = build_parser()
+    args = parser.parse_args()
+    if args.command == "train" and args.coverage_completion:
+        if args.resume is None:
+            parser.error("--coverage-completion requires --resume")
     config = apply_overrides(load_config(args.config), args)
+    if (
+        args.command == "train"
+        and args.coverage_completion
+        and str(config.get("dynamic_hard", {}).get("mode", "none"))
+        != "dynamic_hard"
+    ):
+        parser.error("--coverage-completion is only valid for Dynamic-hard")
     output_dir = Path(config["experiment"]["output_dir"]).expanduser().resolve()
     logger = configure_logging(output_dir)
     seed_everything(int(config["experiment"]["seed"]))
@@ -93,6 +112,7 @@ def main() -> None:
         checkpoint_path = trainer.run(
             resume=args.resume,
             confidence_partition=args.confidence_partition,
+            coverage_completion=args.coverage_completion,
         )
         if args.skip_eval:
             return

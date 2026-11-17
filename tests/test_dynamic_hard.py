@@ -1,10 +1,14 @@
 import numpy as np
 import torch
 import pytest
+from pathlib import Path
 from types import SimpleNamespace
 from torch import nn
 
 from cue_sfda.data import CaseRecord
+from cue_sfda.cli import build_parser
+from cue_sfda.engine.trainer import CUETrainer
+import cue_sfda.engine.trainer as trainer_module
 from cue_sfda.method.dynamic_hard import (
     DynamicHardCache,
     DynamicHardCacheBuilder,
@@ -119,13 +123,180 @@ def test_coverage_sampling_prefers_unseen_cases_in_both_passes():
         pass_seen = set()
         for _ in range(len(names)):
             index = sample_coverage_index(
-                high, low, names, seen, 0.75, generator
+                high,
+                low,
+                names,
+                seen,
+                0.75,
+                generator,
+                coverage_mode=True,
             )
             assert names[index] not in seen
             seen.add(names[index])
             pass_seen.add(names[index])
         assert pass_seen == set(names)
         seen.clear()
+
+
+def test_resume_coverage_completion_refreshes_once_then_restores_sampler():
+    names = [f"case_{index}" for index in range(8)]
+    high, low = list(range(5)), list(range(5, 8))
+    all_cases = set(names)
+    generator = torch.Generator().manual_seed(19)
+    seen = {names[0], names[3]}
+    assert not refresh_ready(seen, all_cases, refresh_cycle=0, max_cycles=1)
+
+    while seen != all_cases:
+        index = sample_coverage_index(
+            high, low, names, seen, 0.75, generator, coverage_mode=True
+        )
+        assert names[index] not in seen
+        seen.add(names[index])
+    assert refresh_ready(seen, all_cases, refresh_cycle=0, max_cycles=1)
+
+    refresh_cycle = 1
+    seen.clear()
+    for _ in range(len(names)):
+        index = sample_coverage_index(
+            high, low, names, seen, 0.75, generator, coverage_mode=True
+        )
+        assert names[index] not in seen
+        seen.add(names[index])
+    assert seen == all_cases
+    assert not refresh_ready(seen, all_cases, refresh_cycle, max_cycles=1)
+
+    # Once the one allowed refresh is used and the second pass completes, the
+    # regular stratified sampler may repeat cases again.
+    repeated = sample_coverage_index(
+        high, low, names, seen, 0.75, generator, coverage_mode=False
+    )
+    assert names[repeated] in seen
+
+
+def test_refresh_resets_coverage_and_starts_post_refresh_completion(
+    tmp_path, monkeypatch
+):
+    image_path = tmp_path / "case.nii.gz"
+    image_path.write_bytes(b"image")
+    case = CaseRecord(name=image_path.name, image_path=image_path)
+    cache = DynamicHardCache(tmp_path / "cache")
+    created = {}
+
+    class FakeBuilder:
+        def __init__(self, *_args, **_kwargs):
+            self.disable_lora = True
+            created["builder"] = self
+
+        def build(self, cases, cache, version, teacher_type, teacher_iteration=None):
+            assert cases == [case]
+            cache.write_version_metadata(
+                version,
+                {
+                    "cache_version": version,
+                    "teacher_type": teacher_type,
+                    "teacher_iteration": teacher_iteration,
+                    "case_ids": [case.name],
+                    "num_views": 2,
+                    "prompts": ["liver cancer"],
+                    "standard_prompt": "liver cancer",
+                },
+            )
+            cache.activate_version(version)
+
+    monkeypatch.setattr(trainer_module, "DynamicHardCacheBuilder", FakeBuilder)
+    trainer = object.__new__(CUETrainer)
+    trainer.dynamic_hard_enabled = True
+    trainer.dynamic_hard_cache = cache
+    trainer.train_cases = [case]
+    trainer.seen_cases_since_refresh = {case.name}
+    trainer.refresh_cycle = 0
+    trainer.max_refresh_cycles = 1
+    trainer.refresh_history = []
+    trainer.dynamic_hard_config = {"prompts": ["liver cancer"]}
+    trainer.config = {
+        "experiment": {"seed": 42},
+        "method": {
+            "num_views": 2,
+            "style_mix_probability": 0.75,
+            "noise_std": 0.08,
+            "gamma_range": [0.7, 1.5],
+        },
+        "dynamic_hard": {"prompts": ["liver cancer"]},
+    }
+    trainer.runtime = SimpleNamespace()
+    trainer.store = object()
+    trainer.dynamic_prompt_embeddings = {}
+    trainer.logger = QuietLogger()
+    trainer.model = nn.Linear(1, 1)
+    trainer.dynamic_hard_cache_memory = {"stale": np.array([1])}
+    trainer.dynamic_hard_memory_case = case.name
+    trainer.output_dir = tmp_path / "output"
+
+    trainer._refresh_dynamic_hard_cache(iteration=42)
+
+    assert created["builder"].disable_lora is False
+    assert trainer.refresh_cycle == 1
+    assert trainer.refresh_history[0]["teacher_type"] == "student_snapshot"
+    assert trainer.refresh_history[0]["trigger_iteration"] == 42
+    assert trainer.seen_cases_since_refresh == set()
+    assert trainer.coverage_mode is True
+    assert trainer.dynamic_hard_memory_case is None
+    assert cache.metadata()["active_version"] == 1
+
+
+def test_initial_dynamic_hard_sampling_allows_repeated_cases():
+    names = [f"high_{index}" for index in range(6)] + [
+        f"low_{index}" for index in range(4)
+    ]
+    high, low = list(range(6)), list(range(6, 10))
+    generator = torch.Generator().manual_seed(42)
+    seen = set()
+    sampled = []
+    for _ in range(20):
+        index = sample_coverage_index(
+            high, low, names, seen, 0.75, generator, coverage_mode=False
+        )
+        sampled.append(names[index])
+        seen.add(names[index])
+    assert len(set(sampled)) < len(sampled)
+
+
+def test_coverage_completion_is_an_explicit_resume_option():
+    args = build_parser().parse_args(
+        [
+            "train",
+            "--config",
+            "dynamic.yaml",
+            "--resume",
+            "latest.pt",
+            "--coverage-completion",
+        ]
+    )
+    assert args.resume == Path("latest.pt")
+    assert args.coverage_completion is True
+
+
+def test_non_dynamic_hard_sampler_keeps_legacy_stratified_behavior():
+    names = [f"case_{index}" for index in range(10)]
+    trainer = object.__new__(CUETrainer)
+    trainer.dynamic_hard_enabled = False
+    trainer.config = {"method": {"high_quality_sampling_probability": 0.75}}
+    trainer.generator = torch.Generator().manual_seed(23)
+    trainer.train_cases = [SimpleNamespace(name=name) for name in names]
+    high, low = list(range(6)), list(range(6, 10))
+
+    actual = [trainer._sample_case_index(high, low) for _ in range(100)]
+    expected_generator = torch.Generator().manual_seed(23)
+    expected = []
+    for _ in range(100):
+        use_high = bool(torch.rand((), generator=expected_generator) < 0.75)
+        choices = high if use_high else low
+        expected.append(
+            choices[
+                int(torch.randint(len(choices), (1,), generator=expected_generator))
+            ]
+        )
+    assert actual == expected
 
 
 def test_coverage_sampler_retains_regular_high_low_probability_when_uncovered():

@@ -103,6 +103,7 @@ class CUETrainer:
             self.dynamic_hard_config.get("max_refresh_cycles", 1)
         )
         self.seen_cases_since_refresh: set[str] = set()
+        self.coverage_mode = False
         self.refresh_history: list[dict] = []
         self.patience_counter = 0
         self.stop_iteration: int | None = None
@@ -136,8 +137,13 @@ class CUETrainer:
         self,
         resume: str | Path | None = None,
         confidence_partition: str | Path | None = None,
+        coverage_completion: bool = False,
     ) -> Path:
+        if coverage_completion and not self.dynamic_hard_enabled:
+            raise ValueError("Coverage completion is only valid for Dynamic-hard")
         if self.dynamic_hard_enabled:
+            if coverage_completion and resume is None:
+                raise ValueError("Coverage completion requires a resumed run")
             if confidence_partition is not None:
                 raise ValueError(
                     "Dynamic-hard M1 derives its partition from routing; "
@@ -145,6 +151,13 @@ class CUETrainer:
                 )
             if resume is not None:
                 self._resume(resume)
+            if coverage_completion:
+                if self.refresh_cycle >= self.max_refresh_cycles:
+                    raise ValueError(
+                        "Coverage completion can only be enabled before the "
+                        "configured Dynamic-hard refresh"
+                    )
+                self.coverage_mode = True
             self._initialize_routing(
                 str(self.config["method"].get("routing_mode", "original"))
             )
@@ -178,6 +191,16 @@ class CUETrainer:
                     self.stop_iteration,
                 )
                 return latest_path
+            if resume is not None and (
+                self.seen_cases_since_refresh
+                == {case.name for case in self.train_cases}
+            ):
+                if self._dynamic_hard_refresh_ready():
+                    self._refresh_dynamic_hard_cache(self.start_iteration)
+                    self._save_latest(self.start_iteration)
+                elif self.coverage_mode:
+                    self.coverage_mode = False
+                    self._save_latest(self.start_iteration)
         else:
             if resume is not None:
                 self._resume(resume)
@@ -296,13 +319,6 @@ class CUETrainer:
                 and iteration < total_iterations
             ):
                 self._save_latest(iteration)
-            refreshed = False
-            if self.dynamic_hard_enabled and self._dynamic_hard_refresh_ready():
-                self._refresh_dynamic_hard_cache(iteration)
-                # Persist the new active cache version and the cleared coverage
-                # set together, so a resume cannot roll back across refresh.
-                self._save_latest(iteration)
-                refreshed = True
             should_validate = validation_every > 0
             should_validate = should_validate and iteration % validation_every == 0
             should_validate = should_validate and bool(self.validation_cases)
@@ -313,6 +329,31 @@ class CUETrainer:
                     self.stop_reason = "early_stopping_patience"
                     self._write_early_stopping()
                     break
+            refreshed = False
+            coverage_complete = self.dynamic_hard_enabled and (
+                self.seen_cases_since_refresh
+                == {case.name for case in self.train_cases}
+            )
+            if (
+                coverage_complete
+                and self.coverage_mode
+                and not self._dynamic_hard_refresh_ready()
+            ):
+                self.coverage_mode = False
+                self._save_latest(iteration)
+                refreshed = True
+                self.logger.info(
+                    "Dynamic-hard resumed coverage complete pass=%d iteration=%d; "
+                    "ordinary sampler restored",
+                    self.refresh_cycle + 1,
+                    iteration,
+                )
+            elif self.dynamic_hard_enabled and self._dynamic_hard_refresh_ready():
+                self._refresh_dynamic_hard_cache(iteration)
+                # Persist the new active cache version and the cleared coverage
+                # set together, so a resume cannot roll back across refresh.
+                self._save_latest(iteration)
+                refreshed = True
             if (
                 iteration % save_every == 0
                 and iteration < total_iterations
@@ -535,9 +576,10 @@ class CUETrainer:
         )
         self.refresh_cycle = cycle
         self.seen_cases_since_refresh.clear()
+        self.coverage_mode = True
         self.dynamic_hard_cache_memory.clear()
         self.dynamic_hard_memory_case = None
-        metadata = self.dynamic_hard_cache.metadata()
+        metadata = self.dynamic_hard_cache.metadata(self.refresh_cycle)
         save_json(
             {"mode": "dynamic_hard", **metadata},
             self.output_dir / "dynamic_hard_cache_metadata.json",
@@ -557,6 +599,7 @@ class CUETrainer:
                 "cache_version": int(self.refresh_cycle),
                 "refresh_history": self.refresh_history,
                 "seen_cases_since_refresh": sorted(self.seen_cases_since_refresh),
+                "coverage_mode": self.coverage_mode,
             },
             self.output_dir / "refresh_history.json",
         )
@@ -611,6 +654,7 @@ class CUETrainer:
             "dynamic_hard_enabled": self.dynamic_hard_enabled,
             "refresh_cycle": self.refresh_cycle,
             "seen_cases_since_refresh": sorted(self.seen_cases_since_refresh),
+            "coverage_mode": self.coverage_mode,
             "refresh_history": self.refresh_history,
             "patience_counter": self.patience_counter,
             "stop_iteration": self.stop_iteration,
@@ -640,6 +684,7 @@ class CUETrainer:
                 self.seen_cases_since_refresh,
                 probability,
                 self.generator,
+                coverage_mode=self.coverage_mode,
             )
         use_high = bool(torch.rand((), generator=self.generator) < probability)
         candidates = high_indices if use_high else low_indices
@@ -1152,6 +1197,7 @@ class CUETrainer:
         self.seen_cases_since_refresh = set(
             str(name) for name in training_state.get("seen_cases_since_refresh", [])
         )
+        self.coverage_mode = bool(training_state.get("coverage_mode", False))
         self.refresh_history = list(training_state.get("refresh_history", []))
         self.patience_counter = int(training_state.get("patience_counter", 0))
         self.stop_iteration = training_state.get("stop_iteration")
