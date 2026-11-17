@@ -125,6 +125,21 @@ class ConsensusCache:
         arrays["geometry"] = geometry
         return arrays
 
+    def load_confidence(self, case: CaseRecord) -> dict[str, np.ndarray | dict]:
+        """Load only the cached joint voxel confidence and its geometry record."""
+        path = self.case_path(case.name)
+        if not path.is_file():
+            raise FileNotFoundError(f"Missing consensus cache for {case.name}: {path}")
+        with np.load(path, allow_pickle=False) as data:
+            confidence = data["joint_voxel_confidence"].astype(np.float32, copy=False)
+            geometry = json.loads(str(data["geometry_json"].item()))
+        if geometry.get("case_id") != case.name:
+            raise ValueError(f"Consensus cache case mismatch: {path}")
+        stat = case.image_path.stat()
+        if geometry.get("image_size") != int(stat.st_size) or geometry.get("image_mtime_ns") != int(stat.st_mtime_ns):
+            raise ValueError(f"Consensus cache image changed since creation: {case.name}")
+        return {"joint_voxel_confidence": confidence, "geometry": geometry}
+
     def save_case(
         self,
         case: CaseRecord,

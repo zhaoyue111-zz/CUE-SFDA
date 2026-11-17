@@ -19,6 +19,7 @@ from cue_sfda.method.losses import (
     balanced_masked_binary_cross_entropy,
     bernoulli_kl_divergence,
     binary_entropy,
+    confidence_weight_map,
     masked_binary_cross_entropy,
     masked_soft_dice_loss,
 )
@@ -76,6 +77,17 @@ class CUETrainer:
             )
             if high_cache_dir else None
         )
+        high_weighting = train_config.get("high_voxel_weighting", {})
+        self.high_voxel_weighting = dict(high_weighting) if isinstance(high_weighting, dict) else {}
+        self.high_voxel_weighting_enabled = bool(self.high_voxel_weighting.get("enabled", False))
+        self.high_confidence_cache = None
+        self.high_confidence_case_memory: dict | None = None
+        self.high_confidence_memory_case: str | None = None
+        if self.high_voxel_weighting_enabled:
+            confidence_cache_dir = self.high_voxel_weighting.get("cache_dir")
+            if not confidence_cache_dir:
+                raise ValueError("high voxel weighting requires train.high_voxel_weighting.cache_dir")
+            self.high_confidence_cache = ConsensusCache(confidence_cache_dir)
         relation_config = config.get("high_relation", {})
         self.high_relation_enabled = bool(relation_config.get("enabled", False))
         self.high_relation_weight = float(relation_config.get("weight", 0.0))
@@ -808,7 +820,13 @@ class CUETrainer:
                 else self._patch(partner_volume, partner_slicer)
             )
             if high_confidence:
-                loss, patch_metrics = self._high_confidence_loss(image, case.name, patch_index)
+                voxel_confidence = (
+                    self._high_confidence_patch(case, case_slicer, case_volume.shape[-3:])
+                    if self.high_voxel_weighting_enabled else None
+                )
+                loss, patch_metrics = self._high_confidence_loss(
+                    image, case.name, patch_index, voxel_confidence
+                )
                 branch = "high"
             elif case.name in self.sat_rescue_cases:
                 loss, patch_metrics = self._sat_rescue_loss(image, case, case_slicer, case_volume)
@@ -956,6 +974,7 @@ class CUETrainer:
         image: torch.Tensor,
         case_name: str | None = None,
         patch_index: int | None = None,
+        voxel_confidence: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, dict[str, int | bool]]:
         method_config = self.config["method"]
         teacher_image = image
@@ -1009,6 +1028,25 @@ class CUETrainer:
         # Once a case passes Eq. (11), the paper supervises the complete
         # affinity-refined pseudo-label rather than masking it a second time.
         weight = torch.ones_like(refined)
+        if self.high_voxel_weighting_enabled:
+            if voxel_confidence is None:
+                raise ValueError("High voxel weighting is enabled but no aligned confidence patch was supplied")
+            if tuple(voxel_confidence.shape) != tuple(image.shape):
+                raise ValueError(
+                    f"Voxel confidence/image shape mismatch: {tuple(voxel_confidence.shape)} vs {tuple(image.shape)}"
+                )
+            if tuple(voxel_confidence.shape) != tuple(refined.shape):
+                raise ValueError(
+                    f"Voxel confidence/target shape mismatch: {tuple(voxel_confidence.shape)} vs {tuple(refined.shape)}"
+                )
+            weighting = self.high_voxel_weighting
+            weight = confidence_weight_map(
+                voxel_confidence,
+                function=str(weighting.get("function", "linear")),
+                floor=float(weighting.get("floor", 0.3)),
+                scale=float(weighting.get("scale", 0.7)),
+                power=float(weighting.get("power", 1.0)),
+            )
         if self.high_pseudo_cache is None:
             pseudo_voxels = int((refined >= threshold).sum().item())
         minimum = int(method_config.get("min_pseudo_foreground_voxels", 8))
@@ -1057,6 +1095,35 @@ class CUETrainer:
                 loss = loss + self.high_relation_weight * relation_loss
                 patch_metrics["relation_loss"] = float(relation_loss.detach().item())
         return loss, patch_metrics
+
+    def _high_confidence_patch(
+        self,
+        case: CaseRecord,
+        slicer: tuple[slice, slice, slice],
+        expected_volume_shape: tuple[int, ...],
+    ) -> torch.Tensor:
+        """Load cached confidence using the exact padded image-volume slicer."""
+        if self.high_confidence_cache is None:
+            raise RuntimeError("High voxel confidence cache is not configured")
+        if self.high_confidence_memory_case != case.name:
+            self.high_confidence_case_memory = self.high_confidence_cache.load_confidence(case)
+            self.high_confidence_memory_case = case.name
+        assert self.high_confidence_case_memory is not None
+        data = self.high_confidence_case_memory
+        confidence = data["joint_voxel_confidence"]
+        geometry = data["geometry"]
+        cached_shape = tuple(int(value) for value in confidence.shape[-3:])
+        geometry_shape = tuple(int(value) for value in geometry.get("padded_shape", ()))
+        if cached_shape != tuple(expected_volume_shape) or cached_shape != geometry_shape:
+            raise ValueError(
+                f"Confidence cache geometry mismatch for {case.name}: "
+                f"array={cached_shape}, metadata={geometry_shape}, image={tuple(expected_volume_shape)}"
+            )
+        patch = np.ascontiguousarray(confidence[(slice(None), *slicer)])
+        tensor = torch.from_numpy(patch).unsqueeze(0).to(self.device, dtype=torch.float32)
+        if tuple(tensor.shape[-3:]) != self.patch_size:
+            raise ValueError(f"Confidence patch has unexpected shape for {case.name}: {tuple(tensor.shape)}")
+        return tensor
 
     def _low_confidence_loss(
         self,

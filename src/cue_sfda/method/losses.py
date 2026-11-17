@@ -4,6 +4,30 @@ import torch
 import torch.nn.functional as F
 
 
+def confidence_weight_map(
+    confidence: torch.Tensor,
+    function: str = "linear",
+    floor: float = 0.3,
+    scale: float = 0.7,
+    power: float = 1.0,
+) -> torch.Tensor:
+    """Map voxel confidence in [0, 1] to strictly positive supervision weights."""
+    confidence = confidence.detach().float().clamp(0.0, 1.0)
+    floor = float(floor)
+    scale = float(scale)
+    if floor <= 0.0 or scale < 0.0:
+        raise ValueError("confidence weighting requires floor > 0 and scale >= 0")
+    if function == "linear":
+        transformed = confidence
+    elif function == "power":
+        if float(power) <= 0.0:
+            raise ValueError("confidence weighting power must be positive")
+        transformed = confidence.pow(float(power))
+    else:
+        raise ValueError(f"Unsupported confidence weighting function: {function}")
+    return floor + scale * transformed
+
+
 def masked_binary_cross_entropy(
     probability: torch.Tensor,
     target: torch.Tensor,

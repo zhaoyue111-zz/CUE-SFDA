@@ -1,0 +1,10 @@
+{
+  "weighted_minus_equal": {
+    "mean_predicted_voxel_delta": 218.0,
+    "median_predicted_voxel_delta": 106.5,
+    "total_predicted_voxel_delta": 9592,
+    "min_case_delta": -65,
+    "max_case_delta": 1420
+  },
+  "interpretation": "Weighted run predicts more voxels on average; this matches recall rising while precision falls."
+}

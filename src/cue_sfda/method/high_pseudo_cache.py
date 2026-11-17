@@ -27,10 +27,17 @@ class HighPseudoCache:
             raise ValueError("High pseudo-label cache does not cover all requested cases")
         self._targets: dict[str, np.ndarray] = {}
         self._counts: dict[str, np.ndarray] = {}
-        prototype_path = self.root / "case_prototypes.pt"
-        self.prototypes: dict[str, torch.Tensor] = torch.load(
-            prototype_path, map_location="cpu", weights_only=True
-        )
+        self._prototype_path = self.root / "case_prototypes.pt"
+        self._prototypes: dict[str, torch.Tensor] | None = None
+
+    @property
+    def prototypes(self) -> dict[str, torch.Tensor]:
+        """Load prototypes only for explicitly enabled relation objectives."""
+        if self._prototypes is None:
+            self._prototypes = torch.load(
+                self._prototype_path, map_location="cpu", weights_only=True
+            )
+        return self._prototypes
 
     def _load_case(self, case_name: str) -> None:
         if case_name in self._targets:
