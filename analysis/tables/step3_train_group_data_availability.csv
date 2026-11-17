@@ -1,0 +1,2 @@
+required_dataset,train_cases,frozen_pre_adaptation_dice_rows,frozen_pre_adaptation_precision_recall_available,adapted_per_case_rows_on_train_cases,available_adapted_per_case_rows_are_test_cases,high_low_pre_post_analysis_possible,reason
+fixed C_joint training partition,101,101,False,0,44,False,existing adapted metrics_per_case.csv are for the 44 held-out validation/test cases; no per-case predictions or metrics for the 101 training cases

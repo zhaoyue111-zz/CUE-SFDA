@@ -1,0 +1,21 @@
+{
+  "stage": "C",
+  "routing": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA/outputs/response_routing/C_joint/routing.csv",
+  "train_cases": 101,
+  "high_cases": 59,
+  "low_cases": 42,
+  "heldout_cases": 44,
+  "prompt": "liver cancer",
+  "iterations": 1000,
+  "seed": 42,
+  "E3_E4_shared": [
+    "C_joint routing",
+    "frozen-source High pseudo-label cache",
+    "raw-image low branch",
+    "Q/K/V LoRA only",
+    "same optimizer and step budget"
+  ],
+  "low_baseline_deviation": "Repository's existing low branch uses augmented-view teacher/student KL. This Stage C control uses an explicit opt-in raw-image frozen-source Bernoulli-KL baseline to follow 1.md's no-view rule; default trainer behavior is unchanged.",
+  "E4_only_change": "On low-query foreground voxels from the frozen source soft target, add 0.1 * mean(1 - max cosine(student raw D5 feature, frozen High foreground prototype bank)). No GT enters this loss.",
+  "gt_used_for_training_or_selection": false
+}

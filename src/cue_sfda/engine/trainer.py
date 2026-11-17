@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint as activation_checkpoint
 
 from cue_sfda.data import CaseRecord, TargetVolumeStore
 from cue_sfda.engine.checkpoint import load_checkpoint, save_checkpoint
@@ -36,6 +37,7 @@ from cue_sfda.sat_rescue import evaluate_sat_assisted
 from cue_sfda.method.retrieval import StableSupportMemory
 from cue_sfda.method.consensus import ConsensusCache, ConsensusCacheBuilder
 from cue_sfda.modeling.voxtell import load_prompt_embedding
+from cue_sfda.method.high_pseudo_cache import HighPseudoCache
 
 
 class CUETrainer:
@@ -65,6 +67,28 @@ class CUETrainer:
         self.patch_size = tuple(int(value) for value in data_config["patch_size"])
         self.tile_step_size = float(train_config.get("tile_step_size", 0.5))
         self.store = TargetVolumeStore(self.patch_size)
+        high_cache_dir = config.get("train", {}).get("high_pseudo_cache_dir")
+        high_cache_cases = config.get("train", {}).get("high_pseudo_cache_case_ids")
+        self.high_pseudo_cache = (
+            HighPseudoCache(
+                high_cache_dir,
+                expected_cases=(high_cache_cases or [case.name for case in train_cases]),
+            )
+            if high_cache_dir else None
+        )
+        relation_config = config.get("high_relation", {})
+        self.high_relation_enabled = bool(relation_config.get("enabled", False))
+        self.high_relation_weight = float(relation_config.get("weight", 0.0))
+        self.high_relation_top_k = max(1, int(relation_config.get("top_k", 5)))
+        self.high_relation_temperature = max(1e-6, float(relation_config.get("temperature", 0.1)))
+        if self.high_relation_enabled and self.high_pseudo_cache is None:
+            raise ValueError("high_relation requires train.high_pseudo_cache_dir")
+        low_relation_config = config.get("low_relation", {})
+        self.low_relation_enabled = bool(low_relation_config.get("enabled", False))
+        self.low_relation_weight = float(low_relation_config.get("weight", 0.0))
+        self.low_relation_checkpointing = bool(low_relation_config.get("gradient_checkpointing", False))
+        if self.low_relation_enabled and self.high_pseudo_cache is None:
+            raise ValueError("low_relation requires train.high_pseudo_cache_dir")
         seed = int(config["experiment"]["seed"])
         self.generator = torch.Generator().manual_seed(seed)
         self.views = StrongViewGenerator(method_config, seed + 1)
@@ -80,6 +104,33 @@ class CUETrainer:
         self.amp_enabled = bool(config["model"].get("amp", True))
         self.amp_enabled = self.amp_enabled and self.device.type == "cuda"
         self.scaler = torch.amp.GradScaler("cuda", enabled=self.amp_enabled)
+        routing_config = config.get("optimizer_routing", {})
+        self.optimizer_routing_enabled = bool(routing_config.get("enabled", False))
+        self.optimizer_routing_mode = str(routing_config.get("mode", "cosine"))
+        self.optimizer_routing_fraction = float(routing_config.get("group_fraction", 0.5))
+        if self.optimizer_routing_enabled and self.high_pseudo_cache is None:
+            raise ValueError("optimizer_routing requires the frozen High pseudo-label cache")
+        if not 0.0 < self.optimizer_routing_fraction <= 1.0:
+            raise ValueError("optimizer_routing.group_fraction must be in (0, 1]")
+        if self.optimizer_routing_mode not in {"fixed", "random", "norm", "cosine"}:
+            raise ValueError("optimizer_routing.mode must be fixed/random/norm/cosine")
+        self.route_generator = torch.Generator().manual_seed(seed + 100_000)
+        self.parameter_groups: dict[str, list[torch.nn.Parameter]] = {}
+        if self.optimizer_routing_enabled:
+            trainable_ids = {id(parameter) for parameter in runtime.trainable_parameters}
+            for name, parameter in self.model.named_parameters():
+                if id(parameter) not in trainable_ids:
+                    continue
+                if ".layers." not in name or ".lora_" not in name:
+                    continue
+                layer = name.split(".layers.", 1)[1].split(".", 1)[0]
+                projection = name.split(".lora_", 1)[1][0].upper()
+                group_name = f"layer{layer}_{projection}"
+                self.parameter_groups.setdefault(group_name, []).append(parameter)
+            if not self.parameter_groups:
+                raise RuntimeError("No decoder layer × Q/K/V parameter groups found")
+        self.parameter_route_rows: list[dict[str, object]] = []
+        self.high_reference_specs: list[tuple[CaseRecord, int]] = []
         self.start_iteration = 0
         self.best_dice = float("-inf")
         self.best_sat_dice = float("-inf")
@@ -212,6 +263,16 @@ class CUETrainer:
         ]
         if not high_indices and not low_indices:
             raise RuntimeError("Routing excluded every training case")
+        if self.optimizer_routing_enabled:
+            minimum = int(self.config["method"].get("min_pseudo_foreground_voxels", 8))
+            for index in high_indices:
+                case = self.train_cases[index]
+                patch_index = self.high_pseudo_cache.first_effective_patch(case.name, minimum)
+                if patch_index is not None:
+                    self.high_reference_specs.append((case, patch_index))
+            if not self.high_reference_specs:
+                raise RuntimeError("No effective frozen High patch is available for routing references")
+            self.logger.info("QKV routing reference patches=%d groups=%d mode=%s fraction=%.2f", len(self.high_reference_specs), len(self.parameter_groups), self.optimizer_routing_mode, self.optimizer_routing_fraction)
         if self.stage2_mode != "none" and self.start_iteration == 0:
             self._prime_stage2_memory(high_indices)
         self.model.train()
@@ -224,7 +285,7 @@ class CUETrainer:
             )
             case = self.train_cases[case_index]
             partner = self.train_cases[partner_index]
-            metrics = self._train_step(case, partner)
+            metrics = self._train_step(case, partner, iteration)
             # Refresh coverage is based on cases actually sampled, not on
             # whether their pseudo-label happened to contain an effective
             # patch.  Otherwise all-background/skipped cases could prevent a
@@ -233,7 +294,7 @@ class CUETrainer:
                 self.seen_cases_since_refresh.add(case.name)
             if iteration == 1 or iteration % log_every == 0:
                 self.logger.info(
-                    "iteration=%d/%d case=%s patches=%d effective_patches=%d skipped_patches=%d branch=%s loss=%.6f confidence=%.4f raw_foreground=%.6f refined_foreground=%.6f split=%.4f",
+                    "iteration=%d/%d case=%s patches=%d effective_patches=%d skipped_patches=%d branch=%s loss=%.6f relation_loss=%.6f route_groups=%s confidence=%.4f raw_foreground=%.6f refined_foreground=%.6f split=%.4f",
                     iteration,
                     total_iterations,
                     case.name,
@@ -242,6 +303,8 @@ class CUETrainer:
                     metrics["skipped_patches"],
                     metrics["branch"],
                     metrics["loss"],
+                    metrics["relation_loss"],
+                    metrics.get("route_groups", "all"),
                     metrics["confidence"],
                     metrics["raw_foreground_fraction"],
                     metrics["refined_foreground_fraction"],
@@ -271,6 +334,7 @@ class CUETrainer:
         final_iteration = self.stop_iteration
         latest_path = self._save_latest(final_iteration)
         self.logger.info("Saved latest LoRA checkpoint: %s", latest_path)
+        self._write_parameter_routing()
         return latest_path
 
     def _load_partition(self, path: str | Path) -> None:
@@ -708,7 +772,7 @@ class CUETrainer:
         )
 
     def _train_step(
-        self, case: CaseRecord, partner: CaseRecord
+        self, case: CaseRecord, partner: CaseRecord, iteration: int = 0
     ) -> dict[str, float | str | int]:
         high_confidence = self.partition.is_high_confidence(case.name)
         case_volume, case_slicers = self.store.sliding_window(
@@ -720,10 +784,17 @@ class CUETrainer:
             self.tile_step_size,
         )
         self.optimizer.zero_grad(set_to_none=True)
+        high_reference_gradients = None
+        if self.optimizer_routing_enabled and not high_confidence:
+            high_reference_gradients = (
+                self._compute_high_reference_gradients(iteration)
+                if self.optimizer_routing_mode == "cosine" else {}
+            )
         loss_sum = 0.0
         confidence_sum = 0.0
         raw_foreground_sum = 0
         refined_foreground_sum = 0
+        relation_loss_sum = 0.0
         voxel_sum = 0
         effective_patch_count = 0
         skipped_patch_count = 0
@@ -731,9 +802,13 @@ class CUETrainer:
         for patch_index, case_slicer in enumerate(case_slicers):
             partner_slicer = partner_slicers[patch_index % len(partner_slicers)]
             image = self._patch(case_volume, case_slicer)
-            partner_image = self._patch(partner_volume, partner_slicer)
+            raw_low_branch = bool(self.config["train"].get("low_raw_frozen_source", False))
+            partner_image = (
+                None if high_confidence or raw_low_branch
+                else self._patch(partner_volume, partner_slicer)
+            )
             if high_confidence:
-                loss, patch_metrics = self._high_confidence_loss(image, case.name)
+                loss, patch_metrics = self._high_confidence_loss(image, case.name, patch_index)
                 branch = "high"
             elif case.name in self.sat_rescue_cases:
                 loss, patch_metrics = self._sat_rescue_loss(image, case, case_slicer, case_volume)
@@ -751,6 +826,7 @@ class CUETrainer:
             refined_foreground_sum += int(
                 patch_metrics["refined_foreground_voxels"]
             )
+            relation_loss_sum += float(patch_metrics.get("relation_loss", 0.0))
             voxel_sum += int(patch_metrics["voxels"])
             if bool(patch_metrics["effective"]):
                 effective_patch_count += 1
@@ -761,6 +837,9 @@ class CUETrainer:
         for parameter in self.runtime.trainable_parameters:
             if parameter.grad is not None:
                 parameter.grad.div_(gradient_denominator)
+        route_groups = "all"
+        if self.optimizer_routing_enabled and not high_confidence:
+            route_groups = self._apply_optimizer_routing(high_reference_gradients, iteration)
         max_norm = float(self.config["train"]["max_grad_norm"])
         torch.nn.utils.clip_grad_norm_(self.runtime.trainable_parameters, max_norm)
         if effective_patch_count > 0:
@@ -780,6 +859,8 @@ class CUETrainer:
             "refined_foreground_fraction": (
                 refined_foreground_sum / max(voxel_sum, 1)
             ),
+            "relation_loss": relation_loss_sum / max(effective_patch_count, 1),
+            "route_groups": route_groups,
         }
 
     def _prime_stage2_memory(self, high_indices: list[int]) -> None:
@@ -874,56 +955,62 @@ class CUETrainer:
         self,
         image: torch.Tensor,
         case_name: str | None = None,
+        patch_index: int | None = None,
     ) -> tuple[torch.Tensor, dict[str, int | bool]]:
         method_config = self.config["method"]
         teacher_image = image
-        self.model.eval()
-        with torch.no_grad():
-            with lora_disabled(self.model):
-                with self._autocast():
-                    teacher_logits, features = self.model(
-                        teacher_image,
-                        self.embedding,
-                        return_features=True,
-                    )
-            teacher_probability = torch.sigmoid(teacher_logits.float())
-            threshold = float(method_config["probability_threshold"])
-            raw_voxels = int((teacher_probability >= threshold).sum().item())
-            propagated = affinity_random_walk(
-                probability=teacher_probability,
-                features=features,
-                image=teacher_image,
-                output_size=tuple(teacher_probability.shape[-3:]),
-                graph_size=tuple(
-                    int(value) for value in method_config["random_walk_size"]
-                ),
-                steps=int(method_config["random_walk_steps"]),
-                alpha=float(method_config["random_walk_alpha"]),
-                temperature=float(method_config["affinity_temperature"]),
-                score_pooling=str(
-                    method_config.get("random_walk_score_pooling", "average")
-                ),
+        threshold = float(method_config["probability_threshold"])
+        if self.high_pseudo_cache is not None:
+            if case_name is None or patch_index is None:
+                raise ValueError("Cached high supervision requires case name and patch index")
+            cached, raw_voxels, pseudo_voxels = self.high_pseudo_cache.target(
+                case_name, patch_index, self.device
             )
-            refined = propagated.clamp(0.0, 1.0)
-            if bool(method_config.get("preserve_raw_foreground", False)):
-                # The paper's 2-D full-resolution graph has no pooling stage.
-                # Preserve source seeds in the memory-bounded 3-D extension so
-                # adaptive pooling cannot erase small tumor pseudo-labels.
-                refined = torch.maximum(refined, teacher_probability)
-            if self.stage2_mode != "none" and case_name is not None:
-                self.stage2_memory.update(case_name, features, teacher_probability)
-            del features
-            del teacher_logits
-            del teacher_probability
-            del propagated
-        self.model.train()
-        with self._autocast():
-            student_logits = self.model(teacher_image, self.embedding)
+            refined = cached
+            need_features = self.high_relation_enabled
+            with self._autocast():
+                if need_features:
+                    student_logits, student_features = self.model(
+                        teacher_image, self.embedding, return_features=True
+                    )
+                else:
+                    student_logits = self.model(teacher_image, self.embedding)
+                    student_features = None
+        else:
+            self.model.eval()
+            with torch.no_grad():
+                with lora_disabled(self.model):
+                    with self._autocast():
+                        teacher_logits, features = self.model(
+                            teacher_image, self.embedding, return_features=True,
+                        )
+                teacher_probability = torch.sigmoid(teacher_logits.float())
+                raw_voxels = int((teacher_probability >= threshold).sum().item())
+                propagated = affinity_random_walk(
+                    probability=teacher_probability, features=features, image=teacher_image,
+                    output_size=tuple(teacher_probability.shape[-3:]),
+                    graph_size=tuple(int(value) for value in method_config["random_walk_size"]),
+                    steps=int(method_config["random_walk_steps"]),
+                    alpha=float(method_config["random_walk_alpha"]),
+                    temperature=float(method_config["affinity_temperature"]),
+                    score_pooling=str(method_config.get("random_walk_score_pooling", "average")),
+                )
+                refined = propagated.clamp(0.0, 1.0)
+                if bool(method_config.get("preserve_raw_foreground", False)):
+                    refined = torch.maximum(refined, teacher_probability)
+                if self.stage2_mode != "none" and case_name is not None:
+                    self.stage2_memory.update(case_name, features, teacher_probability)
+                del features, teacher_logits, teacher_probability, propagated
+            self.model.train()
+            with self._autocast():
+                student_logits = self.model(teacher_image, self.embedding)
+            student_features = None
         student_probability = torch.sigmoid(student_logits.float())
         # Once a case passes Eq. (11), the paper supervises the complete
         # affinity-refined pseudo-label rather than masking it a second time.
         weight = torch.ones_like(refined)
-        pseudo_voxels = int((refined >= threshold).sum().item())
+        if self.high_pseudo_cache is None:
+            pseudo_voxels = int((refined >= threshold).sum().item())
         minimum = int(method_config.get("min_pseudo_foreground_voxels", 8))
         patch_metrics = {
             "raw_foreground_voxels": raw_voxels,
@@ -949,15 +1036,39 @@ class CUETrainer:
             float(train_config["high_bce_weight"]) * bce
             + float(train_config["high_dice_weight"]) * dice
         )
+        if self.high_relation_enabled and student_features is not None and case_name is not None:
+            prototype_items = self.high_pseudo_cache.prototypes
+            candidates = [(name, value) for name, value in prototype_items.items() if name != case_name]
+            if candidates:
+                mask = (refined >= threshold).float()
+                if tuple(mask.shape[-3:]) != tuple(student_features.shape[-3:]):
+                    mask = F.adaptive_max_pool3d(mask, student_features.shape[-3:])
+                denominator = mask.sum(dim=(2, 3, 4)).clamp_min(1.0)
+                student_pool = (student_features.float() * mask).sum(dim=(2, 3, 4)) / denominator
+                student_pool = F.normalize(student_pool, dim=1, eps=1e-6)
+                matrix = torch.stack([value.to(device=self.device, dtype=torch.float32) for _, value in candidates])
+                similarities = student_pool @ matrix.T
+                k = min(self.high_relation_top_k, len(candidates))
+                values, indices = torch.topk(similarities, k=k, dim=1)
+                weights = torch.softmax(values / self.high_relation_temperature, dim=1)
+                reference = (matrix[indices] * weights.unsqueeze(-1)).sum(dim=1)
+                reference = F.normalize(reference, dim=1, eps=1e-6).detach()
+                relation_loss = (1.0 - F.cosine_similarity(student_pool, reference, dim=1)).mean()
+                loss = loss + self.high_relation_weight * relation_loss
+                patch_metrics["relation_loss"] = float(relation_loss.detach().item())
         return loss, patch_metrics
 
     def _low_confidence_loss(
         self,
         image: torch.Tensor,
-        partner: torch.Tensor,
+        partner: torch.Tensor | None,
         case: CaseRecord | None = None,
         case_slicer: tuple[slice, slice, slice] | None = None,
     ) -> tuple[torch.Tensor, dict[str, int | bool]]:
+        if bool(self.config["train"].get("low_raw_frozen_source", False)):
+            return self._low_raw_frozen_source_loss(image)
+        if partner is None:
+            raise ValueError("The existing low-view consistency branch requires its partner image")
         view_count = int(self.config["method"].get("low_quality_views", 3))
         strong_views = self.views.make_views(image, partner, count=view_count + 2)[1:]
         prototype_views = strong_views[:view_count]
@@ -1009,6 +1120,16 @@ class CUETrainer:
             float(train_config["low_consistency_weight"]) * consistency
             + float(train_config["low_entropy_weight"]) * entropy
         )
+        low_relation_value = 0.0
+        if self.low_relation_enabled:
+            with self._autocast():
+                _, relation_features = self.model(image, self.embedding, return_features=True)
+            low_relation, low_relation_value = self._low_memory_relation_term(
+                relation_features, prototype
+            )
+            if low_relation is not None:
+                loss = loss + self.low_relation_weight * low_relation
+            del relation_features
         consensus_extra: dict[str, float] = {}
         if self.consensus_enabled and case is not None and case_slicer is not None:
             consensus_patch = self._consensus_patch(case, case_slicer)
@@ -1116,9 +1237,198 @@ class CUETrainer:
             "refined_foreground_voxels": prototype_voxels,
             "voxels": prototype.numel(),
             "effective": True,
+            "relation_loss": low_relation_value,
             **stage2_extra,
             **consensus_extra,
         }
+
+    def _low_raw_frozen_source_loss(
+        self, image: torch.Tensor
+    ) -> tuple[torch.Tensor, dict[str, int | bool]]:
+        """Raw-image low baseline: frozen source Bernoulli target, no view generation."""
+        was_training = self.model.training
+        self.model.eval()
+        with torch.no_grad(), lora_disabled(self.model):
+            with self._autocast():
+                teacher_logits = self.model(image, self.embedding)
+            teacher_probability = torch.sigmoid(teacher_logits.float())
+            del teacher_logits
+        self.model.train(was_training)
+        if self.low_relation_enabled:
+            if self.low_relation_checkpointing:
+                def student_forward(input_image: torch.Tensor):
+                    with self._autocast():
+                        return self.model(input_image, self.embedding, return_features=True)
+                student_logits, student_features = activation_checkpoint(
+                    student_forward, image, use_reentrant=False
+                )
+            else:
+                with self._autocast():
+                    student_logits, student_features = self.model(
+                        image, self.embedding, return_features=True
+                    )
+        else:
+            with self._autocast():
+                student_logits = self.model(image, self.embedding)
+            student_features = None
+        student_probability = torch.sigmoid(student_logits.float())
+        del student_logits
+        train_config = self.config["train"]
+        consistency = bernoulli_kl_divergence(
+            teacher_probability,
+            student_probability,
+            balanced=bool(train_config.get("balance_low_consistency", True)),
+        )
+        entropy_weight = float(train_config["low_entropy_weight"])
+        loss = float(train_config["low_consistency_weight"]) * consistency
+        if entropy_weight != 0.0:
+            loss = loss + entropy_weight * binary_entropy(student_probability)
+        del student_probability, consistency
+        relation_value = 0.0
+        if student_features is not None:
+            relation, relation_value = self._low_memory_relation_term(
+                student_features, teacher_probability
+            )
+            if relation is not None:
+                loss = loss + self.low_relation_weight * relation
+            del student_features
+        threshold = float(self.config["method"]["probability_threshold"])
+        foreground_voxels = int((teacher_probability >= threshold).sum().item())
+        voxel_count = int(teacher_probability.numel())
+        del teacher_probability
+        metrics = {
+            "raw_foreground_voxels": foreground_voxels,
+            "refined_foreground_voxels": foreground_voxels,
+            "voxels": voxel_count,
+            "effective": True,
+            "relation_loss": relation_value,
+        }
+        return torch.nan_to_num(loss), metrics
+
+    def _low_memory_relation_term(
+        self, student_features: torch.Tensor, teacher_probability: torch.Tensor
+    ) -> tuple[torch.Tensor | None, float]:
+        prototypes = self.high_pseudo_cache.prototypes
+        if not prototypes:
+            return None, 0.0
+        prototype_matrix = torch.stack(
+            [value.to(device=self.device, dtype=torch.float32) for value in prototypes.values()]
+        )
+        feature_map = F.normalize(student_features.float(), dim=1, eps=1e-6)
+        feature_vectors = feature_map.permute(0, 2, 3, 4, 1)
+        memory_similarity = torch.einsum("bdhwc,pc->bpdhw", feature_vectors, prototype_matrix)
+        best_similarity = memory_similarity.max(dim=1).values
+        foreground = (teacher_probability >= float(self.config["method"]["probability_threshold"])).float()
+        if tuple(foreground.shape[-3:]) != tuple(best_similarity.shape[-3:]):
+            foreground = F.adaptive_max_pool3d(foreground, best_similarity.shape[-3:])
+        foreground = foreground[:, 0].bool()
+        if not bool(foreground.any()):
+            return None, 0.0
+        relation = (1.0 - best_similarity[foreground]).mean()
+        return relation, float(relation.detach().item())
+
+    def _compute_high_reference_gradients(self, iteration: int) -> dict[int, torch.Tensor | None]:
+        if not self.high_reference_specs:
+            raise RuntimeError("High reference patches were not initialized")
+        case, patch_index = self.high_reference_specs[(iteration - 1) % len(self.high_reference_specs)]
+        volume, slicers = self.store.sliding_window(case, self.tile_step_size)
+        if patch_index >= len(slicers):
+            raise RuntimeError(f"Cached High patch index is invalid for {case.name}")
+        image = self._patch(volume, slicers[patch_index])
+        loss, _ = self._high_confidence_loss(image, case.name, patch_index)
+        gradients = torch.autograd.grad(
+            loss,
+            self.runtime.trainable_parameters,
+            allow_unused=True,
+            retain_graph=False,
+            create_graph=False,
+        )
+        reference = {
+            id(parameter): (None if gradient is None else gradient.detach().float())
+            for parameter, gradient in zip(self.runtime.trainable_parameters, gradients)
+        }
+        del volume, image, loss, gradients
+        return reference
+
+    def _apply_optimizer_routing(
+        self,
+        high_reference_gradients: dict[int, torch.Tensor | None] | None,
+        iteration: int,
+    ) -> str:
+        if high_reference_gradients is None:
+            raise RuntimeError("Missing independent High reference gradients")
+        group_names = sorted(self.parameter_groups)
+        group_count = len(group_names)
+        keep_count = min(group_count, max(1, int(np.ceil(group_count * self.optimizer_routing_fraction))))
+        scores: dict[str, float] = {}
+        score_is_finite: dict[str, bool] = {}
+        for name in group_names:
+            low_parts = []
+            high_parts = []
+            for parameter in self.parameter_groups[name]:
+                if parameter.grad is None:
+                    low_parts.append(torch.zeros(parameter.numel(), device=self.device))
+                else:
+                    low_parts.append(parameter.grad.detach().float().reshape(-1))
+                reference = high_reference_gradients.get(id(parameter))
+                if reference is None:
+                    high_parts.append(torch.zeros(parameter.numel(), device=self.device))
+                else:
+                    high_parts.append(reference.reshape(-1))
+            low_vector = torch.cat(low_parts)
+            high_vector = torch.cat(high_parts)
+            if self.optimizer_routing_mode == "norm":
+                score = float(torch.linalg.vector_norm(low_vector).item())
+            elif self.optimizer_routing_mode == "cosine":
+                low_norm = torch.linalg.vector_norm(low_vector)
+                high_norm = torch.linalg.vector_norm(high_vector)
+                if float(low_norm.item()) <= 1e-12 or float(high_norm.item()) <= 1e-12:
+                    score = -1.0
+                else:
+                    score = float(F.cosine_similarity(low_vector, high_vector, dim=0).item())
+            else:
+                score = 0.0
+            score_is_finite[name] = bool(np.isfinite(score))
+            # Keep top-k ordering deterministic when mixed-precision gradients
+            # contain NaN/Inf. Finite groups rank first; if all groups are
+            # invalid, the sorted group names provide a stable fallback.
+            scores[name] = score if score_is_finite[name] else float("-inf")
+
+        if self.optimizer_routing_mode == "fixed":
+            selected = set(group_names[:keep_count])
+        elif self.optimizer_routing_mode == "random":
+            order = torch.randperm(group_count, generator=self.route_generator).tolist()
+            selected = {group_names[index] for index in order[:keep_count]}
+        else:
+            selected = set(sorted(group_names, key=lambda name: (-scores[name], name))[:keep_count])
+
+        for name in group_names:
+            chosen = name in selected
+            for parameter in self.parameter_groups[name]:
+                if not chosen:
+                    # None prevents AdamW momentum and weight decay from changing a gated group.
+                    parameter.grad = None
+            self.parameter_route_rows.append({
+                "iteration": int(iteration),
+                "mode": self.optimizer_routing_mode,
+                "group_fraction": self.optimizer_routing_fraction,
+                "group": name,
+                "score": scores[name],
+                "score_finite": score_is_finite[name],
+                "selected": chosen,
+            })
+        return ",".join(sorted(selected))
+
+    def _write_parameter_routing(self) -> None:
+        if not self.optimizer_routing_enabled:
+            return
+        path = self.output_dir / "parameter_routing.csv"
+        fields = ("iteration", "mode", "group_fraction", "group", "score", "score_finite", "selected")
+        with path.open("w", encoding="utf-8", newline="") as handle:
+            import csv
+            writer = csv.DictWriter(handle, fieldnames=fields)
+            writer.writeheader()
+            writer.writerows(self.parameter_route_rows)
 
     def _consensus_probability_field(self) -> str:
         if self.consensus_mode == "image":

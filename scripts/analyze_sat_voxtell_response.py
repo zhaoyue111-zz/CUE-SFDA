@@ -42,7 +42,7 @@ def sat_path(root: Path, case: str, dataset: str = "D_no_response") -> Path:
 
 
 def to_sat_grid(image: Path, probability: Path) -> np.ndarray:
-    # Geometry is identical to SAT/data/inference_dataset.py. The source image
+    # Geometry is identical to ../../SAT/runtime_compat/data/inference_dataset.py. The source image
     # drives CropForegroundd so a near-zero probability map is never cropped.
     tx = monai.transforms.Compose([
         monai.transforms.LoadImaged(keys=["image", "prob"]),

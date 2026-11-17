@@ -1,0 +1,21 @@
+{
+  "routing": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA/outputs/response_routing/C_joint/routing.csv",
+  "split": "/data/hilab/datasets/WCH_MRI145/DWI/split.json",
+  "train_cases": 101,
+  "high_cases": 59,
+  "sat_predictions_reused_from": "outputs/response_routing/sat_no_response/results/D_no_response",
+  "reused_high_empty_cases": 10,
+  "new_sat_inference_cases": 49,
+  "prompt": "liver cancer",
+  "model": "official general SAT-Nano / UNET",
+  "analysis_cases": 59,
+  "voxtell_masks_available": 10,
+  "voxtell_masks_missing": 49,
+  "sat_predictions_available": 59,
+  "subgroups": {
+    "Empty High": 10,
+    "Non-empty Hard High": 11,
+    "Good High": 38,
+    "All High": 59
+  }
+}

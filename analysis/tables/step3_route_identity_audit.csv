@@ -1,0 +1,8 @@
+method,routing_mode,routing_cases,mismatches_vs_fixed_C_joint,partition_source
+C_joint,joint,101,0,outputs/response_routing/C_joint/routing.csv
+Image-only,joint,101,0,outputs/ablation/B_image/routing.csv
+Prompt-only,joint,101,0,outputs/ablation/C_prompt/routing.csv
+Cross-modal,joint,101,0,outputs/ablation/D_cross_modal/routing.csv
+Cross-modal+Language,joint,101,0,outputs/ablation/E_language/routing.csv
+Dynamic-hard,joint,101,0,outputs/ablation/G_dynamic_hard_final/routing.csv
+Dynamic-EMA,joint,101,0,outputs/ablation/H_dynamic_ema_final/routing.csv

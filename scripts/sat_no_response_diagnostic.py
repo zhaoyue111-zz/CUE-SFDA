@@ -27,7 +27,7 @@ def cases_from_routing(path: Path) -> list[str]:
 
 
 def transform_gt(image: Path, label: Path) -> np.ndarray:
-    # Match SAT/data/inference_dataset.py exactly, with nearest-neighbor labels.
+    # Match ../../SAT/runtime_compat/data/inference_dataset.py exactly, with nearest-neighbor labels.
     tx = monai.transforms.Compose([
         monai.transforms.LoadImaged(keys=["image", "label"]),
         monai.transforms.EnsureChannelFirstd(keys=["image", "label"]),

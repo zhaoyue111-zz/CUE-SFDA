@@ -1,0 +1,158 @@
+experiment:
+  seed: 42
+  gpu_id: 1
+  output_dir: /home/ubuntu/zy/pythoncode/sfda/CUE-SFDA/outputs/research_v2/E9_cosine50_safe_E3base
+data:
+  image_dir: /data/hilab/datasets/WCH_MRI145/DWI/images
+  split_json: /data/hilab/datasets/WCH_MRI145/DWI/split.json
+  patch_size:
+  - 192
+  - 192
+  - 192
+model:
+  voxtell_root: /home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk
+  model_dir: /home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model
+  text_encoder: /home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/Qwen3-Embedding-4B
+  prompt: liver cancer
+  amp: true
+  lora_rank: 8
+  lora_alpha: 16.0
+  lora_dropout: 0.0
+method:
+  iterations: 1000
+  max_iterations: 1000
+  calibration_cases: 0
+  num_views: 10
+  mixup_alpha: 0.75
+  probability_threshold: 0.5
+  chebyshev_threshold: 0.8
+  quality_threshold: 0.5
+  confidence_ema: 0.9
+  source_only_confidence: true
+  update_confidence_partition: false
+  high_quality_sampling_probability: 0.75
+  low_quality_views: 3
+  style_mix_probability: 0.75
+  noise_std: 0.08
+  gamma_range:
+  - 0.7
+  - 1.5
+  random_walk_size:
+  - 16
+  - 32
+  - 32
+  random_walk_steps: 4
+  random_walk_alpha: 0.0
+  affinity_temperature: 0.15
+  random_walk_score_pooling: max
+  preserve_raw_foreground: true
+  min_pseudo_foreground_voxels: 8
+  min_case_pseudo_foreground_voxels: 64
+  routing_mode: joint
+  routing_uncertainty_csv: null
+  routing_reference_partition: null
+  routing_prompts:
+  - liver cancer
+  - liver tumor
+  - HCC
+  - hepatocellular carcinoma
+train:
+  learning_rate: 1.0e-05
+  weight_decay: 0.0001
+  tile_step_size: 0.5
+  validation_every: 0
+  early_stopping_patience: 0
+  save_validation_predictions: false
+  validate_at_start: false
+  max_grad_norm: 1.0
+  high_dice_weight: 1.0
+  high_bce_weight: 1.0
+  high_foreground_weight: 5.0
+  balance_high_bce: true
+  low_consistency_weight: 1.0
+  low_foreground_weight: 5.0
+  balance_low_consistency: true
+  low_entropy_weight: 0.0
+  log_every: 10
+  save_every: 100
+  high_pseudo_cache_dir: /home/ubuntu/zy/pythoncode/sfda/CUE-SFDA/outputs/research_v2/shared_high_pseudo_cache
+  high_pseudo_cache_case_ids:
+  - 0000155006.nii.gz
+  - 0000480919.nii.gz
+  - 0000801631.nii.gz
+  - 0001491294.nii.gz
+  - 0001679853.nii.gz
+  - 0002088892.nii.gz
+  - 0002855133.nii.gz
+  - 0003081296.nii.gz
+  - 0004918328.nii.gz
+  - 0007994390.nii.gz
+  - 0008386298.nii.gz
+  - 0008446207.nii.gz
+  - 0008877866.nii.gz
+  - 0009699253.nii.gz
+  - 0009772348.nii.gz
+  - 0010392655.nii.gz
+  - 0010909045.nii.gz
+  - 0011024068.nii.gz
+  - 0011880319.nii.gz
+  - 0013482554.nii.gz
+  - 0015474563.nii.gz
+  - 0015988711.nii.gz
+  - 0016167739.nii.gz
+  - 0016377191.nii.gz
+  - 0016804070.nii.gz
+  - 0016980775.nii.gz
+  - 0017354579.nii.gz
+  - 0017452826.nii.gz
+  - 0017484860.nii.gz
+  - 0017554294.nii.gz
+  - 0017686511.nii.gz
+  - 0017805624.nii.gz
+  - 0017811498.nii.gz
+  - 0017815612.nii.gz
+  - 0018122332.nii.gz
+  - 0018128083.nii.gz
+  - 0018806748.nii.gz
+  - 0019209571.nii.gz
+  - 0019227930.nii.gz
+  - 0019873347.nii.gz
+  - 0020946113.nii.gz
+  - 0021127910.nii.gz
+  - 0032174364.nii.gz
+  - 0032182222.nii.gz
+  - 0032229283.nii.gz
+  - 0032677922.nii.gz
+  - 0032710370.nii.gz
+  - 0032812091.nii.gz
+  - 0032834064.nii.gz
+  - 0032961497.nii.gz
+  - 0033052451.nii.gz
+  - 0033102538.nii.gz
+  - 0033164178.nii.gz
+  - 0033235247.nii.gz
+  - 0033315871.nii.gz
+  - 0033498429.nii.gz
+  - 0033923781.nii.gz
+  - 0034092512.nii.gz
+  - 0034131385.nii.gz
+  low_raw_frozen_source: true
+evaluation:
+  tile_step_size: 0.5
+  threshold: 0.5
+  label_value: 1
+consensus:
+  mode: none
+stage2:
+  mode: none
+high_relation:
+  enabled: false
+  weight: 0.0
+low_relation:
+  enabled: false
+  weight: 0.0
+optimizer_routing:
+  enabled: true
+  mode: cosine
+  group_fraction: 0.5
+  reference: one independent frozen-cache High patch per low update

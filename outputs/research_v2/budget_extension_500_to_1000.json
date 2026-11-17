@@ -1,0 +1,7 @@
+{
+  "reason": "The initial 500-step run left mean Dice near 0.303, below the engineering target. Preserve the 500-step results and continue both arms to a fixed 1000 steps without changing loss, data, or learning rate.",
+  "resume_from": "iteration_000500.pt",
+  "same_optimizer_and_rng_state": true,
+  "gt_used_for_extension_decision": false,
+  "checkpoint_selection": "fixed iteration 1000"
+}

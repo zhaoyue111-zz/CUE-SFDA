@@ -1,0 +1,8 @@
+method,protocol_family,best_iteration,stop_iteration,test_cases,dice,mIoU,precision,recall,note
+C_joint,historical response-routing/ablation (not liver_cancer_mainline),800,1000,44,0.3383830535454125,0.25974585848701337,0.3166146053835515,0.5281479038650256,44-case validation/test summary only; not train High/Low metrics
+Image-only,historical response-routing/ablation (not liver_cancer_mainline),1050,1550,44,0.33788263608093916,0.25865310642920014,0.2956611249372133,0.5607731821182267,44-case validation/test summary only; not train High/Low metrics
+Prompt-only,historical response-routing/ablation (not liver_cancer_mainline),1050,1550,44,0.33776611608901663,0.2585150246684824,0.295442258320331,0.560771402918065,44-case validation/test summary only; not train High/Low metrics
+Cross-modal,historical response-routing/ablation (not liver_cancer_mainline),1050,1550,44,0.3373779453683947,0.2582141550021626,0.29484168012958234,0.5603032290906256,44-case validation/test summary only; not train High/Low metrics
+Cross-modal+Language,historical response-routing/ablation (not liver_cancer_mainline),800,1300,44,0.33949024657868015,0.25985461530967835,0.3276317592345077,0.52064635382325,44-case validation/test summary only; not train High/Low metrics
+Dynamic-hard,historical response-routing/ablation (not liver_cancer_mainline),1250,1750,44,0.34441562236682066,0.2638975594426639,0.29987138343330827,0.5748004052227048,44-case validation/test summary only; not train High/Low metrics
+Dynamic-EMA,historical response-routing/ablation (not liver_cancer_mainline),850,1350,44,0.33677436798348376,0.2573029472699528,0.30192264283624687,0.5429202045602874,44-case validation/test summary only; not train High/Low metrics

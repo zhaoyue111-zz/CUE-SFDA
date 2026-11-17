@@ -1,0 +1,17 @@
+{
+  "stage": "D",
+  "E5_R0": "E4_high_memory_low_relation, all decoder Q/K/V groups update",
+  "grouping": "decoder layer \u00d7 Q/K/V LoRA A/B matrices; expected 6 groups",
+  "active_fraction": 0.5,
+  "low_branch_only": true,
+  "high_branch": "all Q/K/V updates continue; each low update uses an independent current-model High loss gradient reference from a frozen-cache effective patch",
+  "variants": {
+    "E6_fixed50": "fixed first half of sorted Q/K/V groups",
+    "E7_random50": "seeded random half",
+    "E8_norm50": "largest low-gradient norms",
+    "E9_cosine50": "largest cosine alignment to independent High gradients"
+  },
+  "optimizer_semantics": "unselected parameter gradients are set to None before AdamW.step so momentum and weight decay cannot move them",
+  "seed": 42,
+  "iterations": 1000
+}
