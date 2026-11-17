@@ -9,7 +9,24 @@ import torch
 
 from cue_sfda.data import CaseRecord, TargetVolumeStore
 from cue_sfda.method.augmentations import StrongViewGenerator
+from cue_sfda.method.losses import masked_binary_cross_entropy
 from cue_sfda.modeling.lora import lora_disabled
+
+
+def source_checkpoint_signature(model_config: dict) -> dict | None:
+    model_dir = model_config.get("model_dir")
+    if not model_dir:
+        return None
+    path = Path(model_dir).expanduser().resolve() / "checkpoint_final.pth"
+    if not path.is_file():
+        return {"path": str(path), "exists": False}
+    stat = path.stat()
+    return {
+        "path": str(path),
+        "exists": True,
+        "size": int(stat.st_size),
+        "mtime_ns": int(stat.st_mtime_ns),
+    }
 
 
 def _softmax(values: np.ndarray, temperature: float) -> np.ndarray:
@@ -46,6 +63,44 @@ def refresh_ready(
     return refresh_cycle < max_cycles and seen_cases == case_names
 
 
+def sample_coverage_index(
+    high_indices: list[int],
+    low_indices: list[int],
+    case_names: list[str],
+    seen_cases: set[str],
+    high_probability: float,
+    generator: torch.Generator,
+) -> int:
+    """Sample a branch normally, preferring unseen cases until coverage completes."""
+    use_high = bool(torch.rand((), generator=generator) < high_probability)
+    selected_branch = high_indices if use_high else low_indices
+    other_branch = low_indices if use_high else high_indices
+    candidates = [index for index in selected_branch if case_names[index] not in seen_cases]
+    if not candidates:
+        candidates = [index for index in other_branch if case_names[index] not in seen_cases]
+    if not candidates:
+        candidates = selected_branch or other_branch
+    selected = int(torch.randint(len(candidates), (1,), generator=generator).item())
+    return candidates[selected]
+
+
+def dynamic_hard_consensus_loss(
+    student_probability: torch.Tensor,
+    target: torch.Tensor,
+    confidence: torch.Tensor,
+    confidence_threshold: float = 0.0,
+) -> torch.Tensor:
+    """Historical Low-branch weighted BCE used by Dynamic-hard."""
+    weight = confidence
+    if confidence_threshold > 0.0:
+        weight = weight * (weight >= confidence_threshold).float()
+    return masked_binary_cross_entropy(
+        student_probability,
+        target.detach(),
+        weight.detach().clamp_min(1e-3),
+    )
+
+
 class DynamicHardCache:
     """Versioned, experiment-local cache for joint Dynamic-hard targets."""
 
@@ -54,10 +109,16 @@ class DynamicHardCache:
         self.metadata_path = self.root / "metadata.json"
 
     def version_dir(self, version: int) -> Path:
-        return self.root / f"version_{int(version):04d}" / "cases"
+        return self.root / f"version_{int(version):04d}"
+
+    def version_cases_dir(self, version: int) -> Path:
+        return self.version_dir(version) / "cases"
+
+    def version_metadata_path(self, version: int) -> Path:
+        return self.version_dir(version) / "metadata.json"
 
     def case_path(self, case_name: str, version: int) -> Path:
-        return self.version_dir(version) / f"{Path(case_name).name}.npz"
+        return self.version_cases_dir(version) / f"{Path(case_name).name}.npz"
 
     def has_version(self, version: int, cases: list[CaseRecord]) -> bool:
         return all(self.case_path(case.name, version).is_file() for case in cases)
@@ -72,9 +133,34 @@ class DynamicHardCache:
                 np.float32, copy=False
             )
             geometry = json.loads(str(payload["geometry_json"].item()))
+        if (
+            probability.ndim != 4
+            or probability.shape[0] != 1
+            or confidence.shape != probability.shape
+            or geometry.get("padded_shape") != [int(v) for v in probability.shape[-3:]]
+        ):
+            raise ValueError(f"Dynamic-hard cache array geometry is invalid: {path}")
+        if (
+            not np.isfinite(probability).all()
+            or not np.isfinite(confidence).all()
+            or np.any(probability < 0.0)
+            or np.any(probability > 1.0)
+            or np.any(confidence < 0.0)
+            or np.any(confidence > 1.0)
+        ):
+            raise ValueError(f"Dynamic-hard cache contains invalid values: {path}")
         stat = case.image_path.stat()
         if geometry.get("case_id") != case.name:
             raise ValueError(f"Dynamic-hard cache case mismatch: {path}")
+        version = int(path.parent.parent.name.split("_")[-1])
+        version_metadata = self.metadata(version)
+        if (
+            int(geometry.get("cache_version", -1)) != version
+            or geometry.get("teacher_type") != version_metadata.get("teacher_type")
+            or geometry.get("teacher_iteration")
+            != version_metadata.get("teacher_iteration")
+        ):
+            raise ValueError(f"Dynamic-hard cache version/type mismatch: {path}")
         if (
             geometry.get("image_size") != int(stat.st_size)
             or geometry.get("image_mtime_ns") != int(stat.st_mtime_ns)
@@ -106,13 +192,40 @@ class DynamicHardCache:
             )
         temporary.replace(target)
 
-    def metadata(self) -> dict:
-        if not self.metadata_path.is_file():
+    def metadata(self, version: int | None = None) -> dict:
+        path = (
+            self.metadata_path
+            if version is None
+            else self.version_metadata_path(version)
+        )
+        if not path.is_file():
             return {}
-        return json.loads(self.metadata_path.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
 
-    def activate_version(self, payload: dict) -> None:
+    def write_version_metadata(self, version: int, payload: dict) -> None:
+        target = self.version_metadata_path(version)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_suffix(".json.tmp")
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        temporary.replace(target)
+
+    def activate_version(self, version: int) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
+        version_metadata = self.metadata(version)
+        if not version_metadata:
+            raise RuntimeError(f"Cannot activate uncommitted cache version {version}")
+        payload = {
+            "active_version": int(version),
+            "cache_version": int(version),
+            "teacher_type": version_metadata["teacher_type"],
+            "case_ids": version_metadata["case_ids"],
+            "num_views": version_metadata["num_views"],
+            "prompts": version_metadata["prompts"],
+            "standard_prompt": version_metadata["standard_prompt"],
+        }
         temporary = self.metadata_path.with_suffix(".json.tmp")
         temporary.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
@@ -145,6 +258,7 @@ class DynamicHardCacheBuilder:
             runtime.device.type == "cuda"
         )
         self.disable_lora = True
+        self.teacher_iteration: int | None = None
 
     def _autocast(self):
         if not self.amp_enabled:
@@ -233,6 +347,10 @@ class DynamicHardCacheBuilder:
             "image_mtime_ns": int(stat.st_mtime_ns),
             "padded_shape": [int(value) for value in volume.shape[-3:]],
             "cache_version": int(version),
+            "teacher_type": (
+                "frozen_source" if self.disable_lora else "student_snapshot"
+            ),
+            "teacher_iteration": self.teacher_iteration,
         }
         cache.save_case(
             case, version, joint_probability, joint_confidence, geometry
@@ -252,12 +370,20 @@ class DynamicHardCacheBuilder:
         cache: DynamicHardCache,
         version: int,
         teacher_type: str,
+        teacher_iteration: int | None = None,
     ) -> None:
+        if teacher_type == "frozen_source" and not self.disable_lora:
+            raise RuntimeError("Frozen source cache requires LoRA to be disabled")
+        if teacher_type == "student_snapshot" and self.disable_lora:
+            raise RuntimeError("Student snapshot cache requires LoRA to be enabled")
         self.logger.info(
             "building Dynamic-hard cache version=%d cases=%d teacher=%s",
             version,
             len(cases),
             teacher_type,
+        )
+        self.teacher_iteration = (
+            None if teacher_iteration is None else int(teacher_iteration)
         )
         was_training = self.runtime.model.training
         try:
@@ -268,17 +394,25 @@ class DynamicHardCacheBuilder:
                 self.build_case(case, cache, version, volume, slicers)
         finally:
             self.runtime.model.train(was_training)
-        cache.activate_version(
+        dynamic = self.config["dynamic_hard"]
+        cache.write_version_metadata(
+            version,
             {
+                "schema_version": 1,
                 "cache_version": int(version),
-                "active_version": int(version),
                 "teacher_type": teacher_type,
                 "num_cases": len(cases),
-                "case_ids": [case.name for case in cases],
+                "case_ids": sorted(case.name for case in cases),
                 "num_views": int(self.config["method"]["num_views"]),
-                "prompts": [str(prompt) for prompt in self.config["dynamic_hard"]["prompts"]],
-                "standard_prompt": str(
-                    self.config["dynamic_hard"]["standard_prompt"]
+                "prompts": [str(prompt) for prompt in dynamic["prompts"]],
+                "standard_prompt": str(dynamic["standard_prompt"]),
+                "image_temperature": float(dynamic["image_temperature"]),
+                "prompt_temperature": float(dynamic["prompt_temperature"]),
+                "refresh_tile_step_size": float(dynamic["refresh_tile_step_size"]),
+                "teacher_iteration": self.teacher_iteration,
+                "source_checkpoint": source_checkpoint_signature(
+                    self.config["model"]
                 ),
-            }
+            },
         )
+        cache.activate_version(version)

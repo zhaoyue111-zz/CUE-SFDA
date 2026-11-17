@@ -15,7 +15,10 @@ from cue_sfda.method.augmentations import StrongViewGenerator
 from cue_sfda.method.dynamic_hard import (
     DynamicHardCache,
     DynamicHardCacheBuilder,
+    dynamic_hard_consensus_loss,
     refresh_ready,
+    sample_coverage_index,
+    source_checkpoint_signature,
 )
 from cue_sfda.method.losses import (
     balanced_masked_binary_cross_entropy,
@@ -239,7 +242,20 @@ class CUETrainer:
                 ) * int(metrics["patches"])
                 if branch == "low" and "dynamic_hard_loss" in metrics:
                     self.dynamic_hard_loss_patches += int(metrics["patches"])
+                newly_covered = case.name not in self.seen_cases_since_refresh
                 self.seen_cases_since_refresh.add(case.name)
+                if (
+                    newly_covered
+                    and len(self.seen_cases_since_refresh) == len(self.train_cases)
+                ):
+                    self.logger.info(
+                        "Dynamic-hard coverage complete pass=%d iteration=%d "
+                        "cases=%d refresh_available=%s",
+                        self.refresh_cycle + 1,
+                        iteration,
+                        len(self.seen_cases_since_refresh),
+                        self.refresh_cycle < self.max_refresh_cycles,
+                    )
             if iteration == 1 or iteration % log_every == 0:
                 if self.dynamic_hard_enabled:
                     self.logger.info(
@@ -274,8 +290,19 @@ class CUETrainer:
                         metrics["refined_foreground_fraction"],
                         self.partition.threshold,
                     )
-            if iteration % save_every == 0 and iteration < total_iterations:
+            if (
+                not self.dynamic_hard_enabled
+                and iteration % save_every == 0
+                and iteration < total_iterations
+            ):
                 self._save_latest(iteration)
+            refreshed = False
+            if self.dynamic_hard_enabled and self._dynamic_hard_refresh_ready():
+                self._refresh_dynamic_hard_cache(iteration)
+                # Persist the new active cache version and the cleared coverage
+                # set together, so a resume cannot roll back across refresh.
+                self._save_latest(iteration)
+                refreshed = True
             should_validate = validation_every > 0
             should_validate = should_validate and iteration % validation_every == 0
             should_validate = should_validate and bool(self.validation_cases)
@@ -286,8 +313,13 @@ class CUETrainer:
                     self.stop_reason = "early_stopping_patience"
                     self._write_early_stopping()
                     break
-            if self.dynamic_hard_enabled and self._dynamic_hard_refresh_ready():
-                self._refresh_dynamic_hard_cache(iteration)
+            if (
+                iteration % save_every == 0
+                and iteration < total_iterations
+                and not refreshed
+                and self.dynamic_hard_enabled
+            ):
+                self._save_latest(iteration)
         final_iteration = self.stop_iteration or total_iterations
         if self.validation_cases and self.last_validation_iteration != final_iteration:
             self._validate(final_iteration)
@@ -351,21 +383,62 @@ class CUETrainer:
             raise RuntimeError("Dynamic-hard cache is not configured")
         cases = self.train_cases
         expected_ids = sorted(case.name for case in cases)
-        metadata = self.dynamic_hard_cache.metadata()
-        expected_prompts = [
-            str(prompt) for prompt in self.dynamic_hard_config["prompts"]
-        ]
-        compatible = (
-            set(metadata.get("case_ids", [])) == set(expected_ids)
-            and metadata.get("prompts") == expected_prompts
-            and int(metadata.get("num_views", -1))
-            == int(self.config["method"]["num_views"])
+        expected_coverage = {case.name for case in cases}
+        if not self.seen_cases_since_refresh.issubset(expected_coverage):
+            raise RuntimeError("Checkpoint coverage contains cases outside the training split")
+        if self.refresh_cycle != len(self.refresh_history):
+            raise RuntimeError(
+                "Dynamic-hard checkpoint refresh count does not match its history"
+            )
+        if self.refresh_cycle > self.max_refresh_cycles:
+            raise RuntimeError("Dynamic-hard checkpoint exceeds configured refresh count")
+
+        active_version = self.refresh_cycle if self.start_iteration > 0 else 0
+        expected_teacher = "frozen_source" if active_version == 0 else "student_snapshot"
+        expected_teacher_iteration = (
+            None
+            if active_version == 0
+            else int(self.refresh_history[-1]["trigger_iteration"])
         )
-        if not self.dynamic_hard_cache.has_version(0, cases) or not compatible:
-            if self.start_iteration > 0 and self.refresh_cycle > 0:
+        expected_metadata = {
+            "schema_version": 1,
+            "cache_version": active_version,
+            "teacher_type": expected_teacher,
+            "case_ids": expected_ids,
+            "num_cases": len(expected_ids),
+            "num_views": int(self.config["method"]["num_views"]),
+            "prompts": [str(prompt) for prompt in self.dynamic_hard_config["prompts"]],
+            "standard_prompt": str(self.dynamic_hard_config["standard_prompt"]),
+            "image_temperature": float(self.dynamic_hard_config["image_temperature"]),
+            "prompt_temperature": float(self.dynamic_hard_config["prompt_temperature"]),
+            "refresh_tile_step_size": float(
+                self.dynamic_hard_config["refresh_tile_step_size"]
+            ),
+            "teacher_iteration": expected_teacher_iteration,
+            "source_checkpoint": source_checkpoint_signature(
+                self.config["model"]
+            ),
+        }
+        try:
+            version_metadata = self.dynamic_hard_cache.metadata(active_version)
+        except (OSError, json.JSONDecodeError):
+            version_metadata = {}
+        compatible = all(
+            version_metadata.get(key) == value
+            for key, value in expected_metadata.items()
+        )
+        version_complete = self.dynamic_hard_cache.has_version(active_version, cases)
+        if compatible and version_complete:
+            try:
+                for case in cases:
+                    self.dynamic_hard_cache.load_case(case, active_version)
+            except (OSError, ValueError, KeyError, json.JSONDecodeError):
+                compatible = False
+        if not compatible or not version_complete:
+            if self.start_iteration > 0:
                 raise RuntimeError(
                     "Cannot resume Dynamic-hard: the checkpoint's active cache "
-                    f"version {self.refresh_cycle} is missing or incompatible"
+                    f"version {active_version} is missing or incompatible"
                 )
             builder = DynamicHardCacheBuilder(
                 self.config,
@@ -380,20 +453,14 @@ class CUETrainer:
             )
             builder.disable_lora = True
             builder.build(cases, self.dynamic_hard_cache, 0, "frozen_source")
-            metadata = self.dynamic_hard_cache.metadata()
+            active_version = 0
+            expected_teacher = "frozen_source"
+            version_metadata = self.dynamic_hard_cache.metadata(active_version)
         if self.start_iteration == 0:
             self.refresh_cycle = 0
             active_version = 0
-        else:
-            active_version = self.refresh_cycle
-            if not self.dynamic_hard_cache.has_version(active_version, cases):
-                raise RuntimeError(
-                    f"Missing Dynamic-hard cache version {active_version} for resume"
-                )
-        active_metadata = dict(metadata)
-        active_metadata["active_version"] = active_version
-        active_metadata["cache_version"] = active_version
-        self.dynamic_hard_cache.activate_version(active_metadata)
+        self.dynamic_hard_cache.activate_version(active_version)
+        active_metadata = self.dynamic_hard_cache.metadata(active_version)
         save_json(
             {"mode": "dynamic_hard", **active_metadata},
             self.output_dir / "dynamic_hard_cache_metadata.json",
@@ -451,6 +518,7 @@ class CUETrainer:
                 self.dynamic_hard_cache,
                 cycle,
                 "student_snapshot",
+                teacher_iteration=iteration,
             )
         finally:
             self.model.train(was_training)
@@ -564,6 +632,15 @@ class CUETrainer:
         probability = float(
             self.config["method"].get("high_quality_sampling_probability", 0.5)
         )
+        if self.dynamic_hard_enabled:
+            return sample_coverage_index(
+                high_indices,
+                low_indices,
+                [case.name for case in self.train_cases],
+                self.seen_cases_since_refresh,
+                probability,
+                self.generator,
+            )
         use_high = bool(torch.rand((), generator=self.generator) < probability)
         candidates = high_indices if use_high else low_indices
         if not candidates:
@@ -894,15 +971,11 @@ class CUETrainer:
                     "Dynamic-hard supervision requires case and patch geometry"
                 )
             target, confidence = self._dynamic_hard_patch(case, case_slicer)
-            confidence_threshold = float(
-                self.dynamic_hard_config.get("confidence_threshold", 0.0)
-            )
-            if confidence_threshold > 0.0:
-                confidence = confidence * (confidence >= confidence_threshold).float()
-            dynamic_hard_loss_tensor = masked_binary_cross_entropy(
+            dynamic_hard_loss_tensor = dynamic_hard_consensus_loss(
                 student_probability,
-                target.detach(),
-                confidence.detach().clamp_min(1e-3),
+                target,
+                confidence,
+                float(self.dynamic_hard_config.get("confidence_threshold", 0.0)),
             )
             dynamic_hard_loss = float(dynamic_hard_loss_tensor.detach().item())
             loss = loss + float(
@@ -1068,6 +1141,13 @@ class CUETrainer:
             parameter_group["lr"] = configured_lr
         self.start_iteration = int(checkpoint.get("iteration", 0))
         training_state = checkpoint.get("trainer_state", {})
+        if self.dynamic_hard_enabled and not training_state.get(
+            "dynamic_hard_enabled", False
+        ):
+            raise ValueError(
+                "Cannot resume M1 Dynamic-hard from a checkpoint without its "
+                "Dynamic-hard trainer state"
+            )
         self.refresh_cycle = int(training_state.get("refresh_cycle", 0))
         self.seen_cases_since_refresh = set(
             str(name) for name in training_state.get("seen_cases_since_refresh", [])
