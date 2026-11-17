@@ -1,0 +1,58 @@
+{
+  "high_cases": 59,
+  "effective_patches": 164,
+  "skipped_patches": 126,
+  "effective_foreground_voxels": 1202901,
+  "effective_background_voxels": 1159570731,
+  "weight_function": "0.3 + 0.7 * confidence",
+  "groups": {
+    "all": {
+      "voxel_count": 1160773632,
+      "confidence_mean": 0.9996597600518764,
+      "weight_mean": 0.9997618317655074
+    },
+    "foreground": {
+      "voxel_count": 1202901,
+      "confidence_mean": 0.869927972072672,
+      "weight_mean": 0.908949583333913
+    },
+    "background": {
+      "voxel_count": 1159570731,
+      "confidence_mean": 0.9997943395935289,
+      "weight_mean": 0.9998560374413918
+    }
+  },
+  "confidence_bins_on_effective_training_patches": [
+    {
+      "confidence_interval": "[0.0,0.2)",
+      "all_voxels": 2745,
+      "foreground_voxels": 2169,
+      "background_voxels": 576
+    },
+    {
+      "confidence_interval": "[0.2,0.4)",
+      "all_voxels": 8591,
+      "foreground_voxels": 7657,
+      "background_voxels": 934
+    },
+    {
+      "confidence_interval": "[0.4,0.6)",
+      "all_voxels": 35427,
+      "foreground_voxels": 25602,
+      "background_voxels": 9825
+    },
+    {
+      "confidence_interval": "[0.6,0.8)",
+      "all_voxels": 416941,
+      "foreground_voxels": 253561,
+      "background_voxels": 163380
+    },
+    {
+      "confidence_interval": "[0.8,1.0]",
+      "all_voxels": 1160309928,
+      "foreground_voxels": 913912,
+      "background_voxels": 1159396016
+    }
+  ],
+  "overlap_note": "Counts are patch exposures, including repeated voxels from overlapping sliding windows, and exclude skipped patches."
+}

@@ -1,0 +1,52 @@
+{
+  "cases": 59,
+  "voxels": 802462080,
+  "weight_function": "floor + scale * confidence",
+  "floor": 0.3,
+  "scale": 0.7,
+  "confidence_mean": 0.9998122418426957,
+  "weight_mean": 0.9998685690452264,
+  "confidence_weight_bins": [
+    {
+      "confidence_interval": "[0.0,0.2)",
+      "weight_interval": "[0.30,0.44)",
+      "confidence_voxels": 2640,
+      "confidence_fraction": 3.2898750804523997e-06,
+      "weight_voxels": 2640,
+      "weight_fraction": 3.2898750804523997e-06
+    },
+    {
+      "confidence_interval": "[0.2,0.4)",
+      "weight_interval": "[0.44,0.58)",
+      "confidence_voxels": 7562,
+      "confidence_fraction": 9.423498241811003e-06,
+      "weight_voxels": 7562,
+      "weight_fraction": 9.423498241811003e-06
+    },
+    {
+      "confidence_interval": "[0.4,0.6)",
+      "weight_interval": "[0.58,0.72)",
+      "confidence_voxels": 19992,
+      "confidence_fraction": 2.4913326745607716e-05,
+      "weight_voxels": 19992,
+      "weight_fraction": 2.4913326745607716e-05
+    },
+    {
+      "confidence_interval": "[0.6,0.8)",
+      "weight_interval": "[0.72,0.86)",
+      "confidence_voxels": 144354,
+      "confidence_fraction": 0.00017988887400137337,
+      "weight_voxels": 144354,
+      "weight_fraction": 0.00017988887400137337
+    },
+    {
+      "confidence_interval": "[0.8,1.0]",
+      "weight_interval": "[0.86,1.00]",
+      "confidence_voxels": 802287532,
+      "confidence_fraction": 0.9997824844259308,
+      "weight_voxels": 802287532,
+      "weight_fraction": 0.9997824844259308
+    }
+  ],
+  "padding_note": "Counts include padded voxels because padded regions are present in training patches."
+}
