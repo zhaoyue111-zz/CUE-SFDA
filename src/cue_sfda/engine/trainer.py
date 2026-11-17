@@ -185,6 +185,7 @@ class CUETrainer:
             mode=mode,
             uncertainty_csv=method_config["routing_uncertainty_csv"],
             reference_partition=method_config["routing_reference_partition"],
+            target_high_count=method_config.get("routing_high_cases"),
         )
         self.partition.initialize(scores)
         self.skipped_case_names = {

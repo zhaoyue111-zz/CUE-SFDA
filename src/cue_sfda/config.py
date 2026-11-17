@@ -57,8 +57,13 @@ def validate_config(config: dict[str, Any]) -> None:
             "method.min_case_pseudo_foreground_voxels must be positive"
         )
     routing_mode = str(config["method"].get("routing_mode", "original"))
-    if routing_mode not in {"original", "image", "joint", "joint_gate"}:
-        raise ValueError("method.routing_mode must be original/image/joint/joint_gate")
+    if routing_mode not in {
+        "original", "image", "joint", "joint_gate", "joint_empty_to_low"
+    }:
+        raise ValueError(
+            "method.routing_mode must be original/image/joint/joint_gate/"
+            "joint_empty_to_low"
+        )
     tile_step_size = float(config["train"].get("tile_step_size", 0.5))
     if not 0.0 < tile_step_size <= 1.0:
         raise ValueError("train.tile_step_size must be in (0, 1]")

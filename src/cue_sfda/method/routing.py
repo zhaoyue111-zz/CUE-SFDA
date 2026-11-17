@@ -79,8 +79,11 @@ def build_routing_assignments(
     mode: str,
     uncertainty_csv: str | Path,
     reference_partition: str | Path,
+    target_high_count: int | None = None,
 ) -> tuple[list[RoutingAssignment], dict[str, float], dict[str, int | float | str]]:
-    if mode not in {"original", "image", "joint", "joint_gate"}:
+    if mode not in {
+        "original", "image", "joint", "joint_gate", "joint_empty_to_low"
+    }:
         raise ValueError(f"Unknown routing mode: {mode}")
     uncertainties = load_uncertainties(uncertainty_csv)
     reference_scores, foreground_counts, threshold = load_reference_partition(
@@ -114,8 +117,26 @@ def build_routing_assignments(
     else:
         skipped = no_response if mode == "joint_gate" else set()
         candidates = sorted(expected - skipped)
-        # Preserve the fixed-threshold original method's observed high fraction.
-        target_high = round(len(candidates) * original_high_count / total)
+        if mode == "joint_empty_to_low":
+            # Keep every case in training, force empty raw predictions to Low,
+            # and retain the original method's observed High count among cases
+            # with a nonempty raw prediction.
+            candidates = sorted(response_present)
+            target_high = (
+                original_high_count
+                if target_high_count is None
+                else int(target_high_count)
+            )
+            if target_high < 0:
+                raise ValueError("target_high_count cannot be negative")
+            if target_high > len(candidates):
+                raise ValueError(
+                    "joint_empty_to_low needs at least "
+                    f"{target_high} nonempty cases; found {len(candidates)}"
+                )
+        else:
+            # Preserve the fixed-threshold original method's observed high fraction.
+            target_high = round(len(candidates) * original_high_count / total)
         score_name = "image_uncertainty" if mode == "image" else "joint_uncertainty"
         ranked = sorted(
             candidates,
@@ -168,6 +189,9 @@ def build_routing_assignments(
         ),
         "rounding_rule": "Python round(nearest, ties-to-even)",
     }
+    if mode == "joint_empty_to_low":
+        metadata["target_high"] = len(stable)
+        metadata["empty_predictions_forced_low"] = True
     return assignments, partition_scores, metadata
 
 

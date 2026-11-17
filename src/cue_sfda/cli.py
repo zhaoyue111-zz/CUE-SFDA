@@ -46,7 +46,9 @@ def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--calibration-cases", type=int)
     parser.add_argument(
         "--routing-mode",
-        choices=("original", "image", "joint", "joint_gate"),
+        choices=(
+            "original", "image", "joint", "joint_gate", "joint_empty_to_low"
+        ),
     )
 
 
