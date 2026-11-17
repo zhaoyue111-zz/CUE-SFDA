@@ -22,6 +22,8 @@ def save_checkpoint(
     trainer_generator_state: torch.Tensor | None = None,
     view_generator_state: torch.Tensor | None = None,
     view_python_generator_state: object | None = None,
+    scaler: object | None = None,
+    trainer_state: dict | None = None,
 ) -> Path:
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -30,6 +32,7 @@ def save_checkpoint(
         "iteration": int(iteration),
         "lora_state": lora_state_dict(model),
         "optimizer_state": optimizer.state_dict(),
+        "scaler_state": None if scaler is None else scaler.state_dict(),
         "confidence_scores": dict(confidence_scores),
         "confidence_threshold": float(confidence_threshold),
         "best_dice": None if best_dice is None else float(best_dice),
@@ -49,6 +52,8 @@ def save_checkpoint(
             "view_python_generator": view_python_generator_state,
         },
     }
+    if trainer_state is not None:
+        payload["trainer_state"] = dict(trainer_state)
     temporary_path = output_path.with_suffix(output_path.suffix + ".tmp")
     torch.save(payload, temporary_path)
     temporary_path.replace(output_path)
@@ -59,9 +64,13 @@ def load_checkpoint(
     path: str | Path,
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer | None = None,
+    scaler: object | None = None,
 ) -> dict:
     checkpoint = torch.load(Path(path), map_location="cpu", weights_only=False)
     load_lora_state_dict(model, checkpoint["lora_state"])
     if optimizer is not None and "optimizer_state" in checkpoint:
         optimizer.load_state_dict(checkpoint["optimizer_state"])
+    scaler_state = checkpoint.get("scaler_state")
+    if scaler is not None and scaler_state is not None:
+        scaler.load_state_dict(scaler_state)
     return checkpoint

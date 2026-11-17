@@ -64,11 +64,39 @@ def validate_config(config: dict[str, Any]) -> None:
             "method.routing_mode must be original/image/joint/joint_gate/"
             "joint_empty_to_low"
         )
+    dynamic_hard = config.get("dynamic_hard", {})
+    dynamic_mode = str(dynamic_hard.get("mode", "none"))
+    if dynamic_mode not in {"none", "dynamic_hard"}:
+        raise ValueError("dynamic_hard.mode must be none or dynamic_hard")
+    if dynamic_mode == "dynamic_hard":
+        if not dynamic_hard.get("cache_dir"):
+            raise ValueError("dynamic_hard.cache_dir is required")
+        prompts = dynamic_hard.get("prompts", [])
+        standard_prompt = str(dynamic_hard.get("standard_prompt", ""))
+        if not prompts or standard_prompt not in {str(prompt) for prompt in prompts}:
+            raise ValueError(
+                "dynamic_hard.prompts must include dynamic_hard.standard_prompt"
+            )
+        if float(dynamic_hard.get("lambda_consensus", 0.05)) < 0.0:
+            raise ValueError("dynamic_hard.lambda_consensus cannot be negative")
+        if int(dynamic_hard.get("max_refresh_cycles", 1)) < 0:
+            raise ValueError("dynamic_hard.max_refresh_cycles cannot be negative")
+        refresh_step = float(dynamic_hard.get("refresh_tile_step_size", 1.0))
+        if not 0.0 < refresh_step <= 1.0:
+            raise ValueError("dynamic_hard.refresh_tile_step_size must be in (0, 1]")
+        if routing_mode != "joint_empty_to_low":
+            raise ValueError(
+                "the M1 Dynamic-hard config requires joint_empty_to_low routing"
+            )
+        if not int(config["method"].get("routing_high_cases", 0)):
+            raise ValueError("dynamic-hard M1 requires method.routing_high_cases")
     tile_step_size = float(config["train"].get("tile_step_size", 0.5))
     if not 0.0 < tile_step_size <= 1.0:
         raise ValueError("train.tile_step_size must be in (0, 1]")
     if int(config["train"].get("validation_every", 0)) < 0:
         raise ValueError("train.validation_every cannot be negative")
+    if int(config["train"].get("early_stopping_patience", 0)) < 0:
+        raise ValueError("train.early_stopping_patience cannot be negative")
     if float(config["train"].get("high_foreground_weight", 1.0)) < 1.0:
         raise ValueError("train.high_foreground_weight must be at least 1")
     if float(config["train"].get("low_foreground_weight", 1.0)) < 1.0:

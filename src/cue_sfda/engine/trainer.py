@@ -12,6 +12,11 @@ from cue_sfda.data import CaseRecord, TargetVolumeStore
 from cue_sfda.engine.checkpoint import load_checkpoint, save_checkpoint
 from cue_sfda.evaluation import evaluate
 from cue_sfda.method.augmentations import StrongViewGenerator
+from cue_sfda.method.dynamic_hard import (
+    DynamicHardCache,
+    DynamicHardCacheBuilder,
+    refresh_ready,
+)
 from cue_sfda.method.losses import (
     balanced_masked_binary_cross_entropy,
     bernoulli_kl_divergence,
@@ -27,7 +32,7 @@ from cue_sfda.method.uncertainty import (
     chebyshev_estimate,
     pseudo_label_quality,
 )
-from cue_sfda.modeling.voxtell import VoxTellRuntime
+from cue_sfda.modeling.voxtell import VoxTellRuntime, load_prompt_embedding
 from cue_sfda.modeling.lora import lora_disabled
 from cue_sfda.utils import save_json
 
@@ -82,16 +87,99 @@ class CUETrainer:
         self.calibration_foreground_counts: dict[str, int] = {}
         self.skipped_case_names: set[str] = set()
         self.routing_metadata: dict[str, int | float | str] = {}
+        self.dynamic_hard_config = config.get("dynamic_hard", {})
+        self.dynamic_hard_enabled = (
+            str(self.dynamic_hard_config.get("mode", "none")) == "dynamic_hard"
+        )
+        self.dynamic_hard_cache: DynamicHardCache | None = None
+        self.dynamic_prompt_embeddings: dict[str, torch.Tensor] = {}
+        self.dynamic_hard_cache_memory: dict[str, np.ndarray | dict] = {}
+        self.dynamic_hard_memory_case: str | None = None
+        self.refresh_cycle = 0
+        self.max_refresh_cycles = int(
+            self.dynamic_hard_config.get("max_refresh_cycles", 1)
+        )
+        self.seen_cases_since_refresh: set[str] = set()
+        self.refresh_history: list[dict] = []
+        self.patience_counter = 0
+        self.stop_iteration: int | None = None
+        self.stop_reason: str | None = None
+        self.last_training_iteration = 0
+        self.branch_sample_counts = {"high": 0, "low": 0}
+        self.branch_patch_counts = {"high": 0, "low": 0}
+        self.branch_effective_patch_counts = {"high": 0, "low": 0}
+        self.branch_skipped_patch_counts = {"high": 0, "low": 0}
+        self.dynamic_hard_loss_total = 0.0
+        self.dynamic_hard_loss_patches = 0
+        if self.dynamic_hard_enabled:
+            self.dynamic_hard_cache = DynamicHardCache(
+                self.dynamic_hard_config["cache_dir"]
+            )
+            standard_prompt = str(
+                self.dynamic_hard_config["standard_prompt"]
+            )
+            self.dynamic_prompt_embeddings[standard_prompt] = self.embedding
+            for prompt in self.dynamic_hard_config["prompts"]:
+                prompt = str(prompt)
+                if prompt not in self.dynamic_prompt_embeddings:
+                    self.dynamic_prompt_embeddings[prompt] = load_prompt_embedding(
+                        config,
+                        prompt,
+                        self.output_dir / "prompt_cache",
+                        self.device,
+                    )
 
     def run(
         self,
         resume: str | Path | None = None,
         confidence_partition: str | Path | None = None,
     ) -> Path:
-        if resume is not None:
-            self._resume(resume)
-        elif confidence_partition is not None:
-            self._load_partition(confidence_partition)
+        if self.dynamic_hard_enabled:
+            if confidence_partition is not None:
+                raise ValueError(
+                    "Dynamic-hard M1 derives its partition from routing; "
+                    "--confidence-partition is not supported"
+                )
+            if resume is not None:
+                self._resume(resume)
+            self._initialize_routing(
+                str(self.config["method"].get("routing_mode", "original"))
+            )
+            routing_counts = (
+                int(self.routing_metadata.get("high", -1)),
+                int(self.routing_metadata.get("low", -1)),
+                int(self.routing_metadata.get("skip", -1)),
+            )
+            if len(self.train_cases) != 101 or routing_counts != (59, 42, 0):
+                raise RuntimeError(
+                    "M1 Dynamic-hard requires 101 routed cases with "
+                    f"High=59, Low=42, Skip=0; got {len(self.train_cases)} and "
+                    f"{routing_counts}"
+                )
+            self._ensure_dynamic_hard_cache()
+            if resume is None:
+                self._save_latest(0)
+            elif (
+                self.stop_iteration is not None
+                and self.start_iteration >= int(self.stop_iteration)
+            ):
+                latest_path = self.output_dir / "checkpoints" / "latest.pt"
+                if not latest_path.is_file():
+                    raise RuntimeError(
+                        "Dynamic-hard checkpoint is marked early-stopped, but "
+                        f"the latest checkpoint is missing: {latest_path}"
+                    )
+                self.logger.info(
+                    "Dynamic-hard run already stopped at iteration %d; "
+                    "returning existing latest checkpoint",
+                    self.stop_iteration,
+                )
+                return latest_path
+        else:
+            if resume is not None:
+                self._resume(resume)
+            elif confidence_partition is not None:
+                self._load_partition(confidence_partition)
         if (
             self.start_iteration == 0
             and bool(self.config["train"].get("validate_at_start", True))
@@ -135,32 +223,87 @@ class CUETrainer:
             case = self.train_cases[case_index]
             partner = self.train_cases[partner_index]
             metrics = self._train_step(case, partner)
-            if iteration == 1 or iteration % log_every == 0:
-                self.logger.info(
-                    "iteration=%d/%d case=%s patches=%d effective_patches=%d skipped_patches=%d branch=%s loss=%.6f confidence=%.4f raw_foreground=%.6f refined_foreground=%.6f split=%.4f",
-                    iteration,
-                    total_iterations,
-                    case.name,
-                    metrics["patches"],
-                    metrics["effective_patches"],
-                    metrics["skipped_patches"],
-                    metrics["branch"],
-                    metrics["loss"],
-                    metrics["confidence"],
-                    metrics["raw_foreground_fraction"],
-                    metrics["refined_foreground_fraction"],
-                    self.partition.threshold,
+            self.last_training_iteration = iteration
+            if self.dynamic_hard_enabled:
+                branch = str(metrics["branch"])
+                self.branch_sample_counts[branch] += 1
+                self.branch_patch_counts[branch] += int(metrics["patches"])
+                self.branch_effective_patch_counts[branch] += int(
+                    metrics["effective_patches"]
                 )
+                self.branch_skipped_patch_counts[branch] += int(
+                    metrics["skipped_patches"]
+                )
+                self.dynamic_hard_loss_total += float(
+                    metrics.get("dynamic_hard_loss", 0.0)
+                ) * int(metrics["patches"])
+                if branch == "low" and "dynamic_hard_loss" in metrics:
+                    self.dynamic_hard_loss_patches += int(metrics["patches"])
+                self.seen_cases_since_refresh.add(case.name)
+            if iteration == 1 or iteration % log_every == 0:
+                if self.dynamic_hard_enabled:
+                    self.logger.info(
+                        "iteration=%d/%d case=%s patches=%d effective_patches=%d skipped_patches=%d branch=%s loss=%.6f dynamic_hard_loss=%.6f confidence=%.4f raw_foreground=%.6f refined_foreground=%.6f split=%.4f",
+                        iteration,
+                        total_iterations,
+                        case.name,
+                        metrics["patches"],
+                        metrics["effective_patches"],
+                        metrics["skipped_patches"],
+                        metrics["branch"],
+                        metrics["loss"],
+                        metrics.get("dynamic_hard_loss", 0.0),
+                        metrics["confidence"],
+                        metrics["raw_foreground_fraction"],
+                        metrics["refined_foreground_fraction"],
+                        self.partition.threshold,
+                    )
+                else:
+                    self.logger.info(
+                        "iteration=%d/%d case=%s patches=%d effective_patches=%d skipped_patches=%d branch=%s loss=%.6f confidence=%.4f raw_foreground=%.6f refined_foreground=%.6f split=%.4f",
+                        iteration,
+                        total_iterations,
+                        case.name,
+                        metrics["patches"],
+                        metrics["effective_patches"],
+                        metrics["skipped_patches"],
+                        metrics["branch"],
+                        metrics["loss"],
+                        metrics["confidence"],
+                        metrics["raw_foreground_fraction"],
+                        metrics["refined_foreground_fraction"],
+                        self.partition.threshold,
+                    )
             if iteration % save_every == 0 and iteration < total_iterations:
                 self._save_latest(iteration)
             should_validate = validation_every > 0
             should_validate = should_validate and iteration % validation_every == 0
             should_validate = should_validate and bool(self.validation_cases)
             if should_validate:
-                self._validate(iteration)
-        if self.validation_cases and self.last_validation_iteration != total_iterations:
-            self._validate(total_iterations)
-        latest_path = self._save_latest(total_iterations)
+                should_stop = self._validate(iteration)
+                if should_stop:
+                    self.stop_iteration = iteration
+                    self.stop_reason = "early_stopping_patience"
+                    self._write_early_stopping()
+                    break
+            if self.dynamic_hard_enabled and self._dynamic_hard_refresh_ready():
+                self._refresh_dynamic_hard_cache(iteration)
+        final_iteration = self.stop_iteration or total_iterations
+        if self.validation_cases and self.last_validation_iteration != final_iteration:
+            self._validate(final_iteration)
+        if self.dynamic_hard_enabled:
+            if self.stop_iteration is None:
+                self.stop_iteration = final_iteration
+                self.stop_reason = "max_iterations"
+            self._save_latest(final_iteration)
+            self._write_early_stopping()
+            self._write_refresh_history()
+            self._write_training_summary()
+            self.logger.info(
+                "Saved latest LoRA checkpoint: %s", self.output_dir / "checkpoints/latest.pt"
+            )
+            return self.output_dir / "checkpoints/latest.pt"
+        latest_path = self._save_latest(final_iteration)
         self.logger.info("Saved latest LoRA checkpoint: %s", latest_path)
         return latest_path
 
@@ -202,6 +345,216 @@ class CUETrainer:
             metadata["high"], metadata["low"], metadata["skip"],
             metadata["no_response"],
         )
+
+    def _ensure_dynamic_hard_cache(self) -> None:
+        if self.dynamic_hard_cache is None:
+            raise RuntimeError("Dynamic-hard cache is not configured")
+        cases = self.train_cases
+        expected_ids = sorted(case.name for case in cases)
+        metadata = self.dynamic_hard_cache.metadata()
+        expected_prompts = [
+            str(prompt) for prompt in self.dynamic_hard_config["prompts"]
+        ]
+        compatible = (
+            set(metadata.get("case_ids", [])) == set(expected_ids)
+            and metadata.get("prompts") == expected_prompts
+            and int(metadata.get("num_views", -1))
+            == int(self.config["method"]["num_views"])
+        )
+        if not self.dynamic_hard_cache.has_version(0, cases) or not compatible:
+            if self.start_iteration > 0 and self.refresh_cycle > 0:
+                raise RuntimeError(
+                    "Cannot resume Dynamic-hard: the checkpoint's active cache "
+                    f"version {self.refresh_cycle} is missing or incompatible"
+                )
+            builder = DynamicHardCacheBuilder(
+                self.config,
+                self.runtime,
+                self.store,
+                StrongViewGenerator(
+                    self.config["method"],
+                    int(self.config["experiment"]["seed"]) + 10000,
+                ),
+                self.dynamic_prompt_embeddings,
+                self.logger,
+            )
+            builder.disable_lora = True
+            builder.build(cases, self.dynamic_hard_cache, 0, "frozen_source")
+            metadata = self.dynamic_hard_cache.metadata()
+        if self.start_iteration == 0:
+            self.refresh_cycle = 0
+            active_version = 0
+        else:
+            active_version = self.refresh_cycle
+            if not self.dynamic_hard_cache.has_version(active_version, cases):
+                raise RuntimeError(
+                    f"Missing Dynamic-hard cache version {active_version} for resume"
+                )
+        active_metadata = dict(metadata)
+        active_metadata["active_version"] = active_version
+        active_metadata["cache_version"] = active_version
+        self.dynamic_hard_cache.activate_version(active_metadata)
+        save_json(
+            {"mode": "dynamic_hard", **active_metadata},
+            self.output_dir / "dynamic_hard_cache_metadata.json",
+        )
+        self._write_refresh_history()
+        self.logger.info(
+            "Using Dynamic-hard cache=%s version=%d cases=%d",
+            self.dynamic_hard_cache.root,
+            active_version,
+            len(expected_ids),
+        )
+
+    def _dynamic_hard_refresh_ready(self) -> bool:
+        if not self.dynamic_hard_enabled:
+            return False
+        expected = {case.name for case in self.train_cases}
+        return refresh_ready(
+            self.seen_cases_since_refresh,
+            expected,
+            self.refresh_cycle,
+            self.max_refresh_cycles,
+        )
+
+    def _refresh_dynamic_hard_cache(self, iteration: int) -> None:
+        if self.dynamic_hard_cache is None:
+            raise RuntimeError("Dynamic-hard cache is not configured")
+        cycle = self.refresh_cycle + 1
+        covered = len(self.seen_cases_since_refresh)
+        previous_refresh_iteration = (
+            int(self.refresh_history[-1]["trigger_iteration"])
+            if self.refresh_history
+            else 0
+        )
+        if covered != len(self.train_cases):
+            raise RuntimeError(
+                "Dynamic-hard refresh was requested before full case coverage"
+            )
+        builder = DynamicHardCacheBuilder(
+            self.config,
+            self.runtime,
+            self.store,
+            StrongViewGenerator(
+                self.config["method"],
+                int(self.config["experiment"]["seed"]) + 10000 + cycle,
+            ),
+            self.dynamic_prompt_embeddings,
+            self.logger,
+        )
+        builder.disable_lora = False
+        was_training = self.model.training
+        try:
+            self.model.eval()
+            builder.build(
+                self.train_cases,
+                self.dynamic_hard_cache,
+                cycle,
+                "student_snapshot",
+            )
+        finally:
+            self.model.train(was_training)
+        self.refresh_history.append(
+            {
+                "refresh_cycle": cycle,
+                "trigger_iteration": int(iteration),
+                "covered_cases": covered,
+                "iterations_since_previous_refresh": int(
+                    iteration - previous_refresh_iteration
+                ),
+                "teacher_type": "student_snapshot",
+            }
+        )
+        self.refresh_cycle = cycle
+        self.seen_cases_since_refresh.clear()
+        self.dynamic_hard_cache_memory.clear()
+        self.dynamic_hard_memory_case = None
+        metadata = self.dynamic_hard_cache.metadata()
+        save_json(
+            {"mode": "dynamic_hard", **metadata},
+            self.output_dir / "dynamic_hard_cache_metadata.json",
+        )
+        self._write_refresh_history()
+        self.logger.info(
+            "Dynamic-hard cache refresh complete cycle=%d iteration=%d",
+            cycle,
+            iteration,
+        )
+
+    def _write_refresh_history(self) -> None:
+        if not self.dynamic_hard_enabled:
+            return
+        save_json(
+            {
+                "cache_version": int(self.refresh_cycle),
+                "refresh_history": self.refresh_history,
+                "seen_cases_since_refresh": sorted(self.seen_cases_since_refresh),
+            },
+            self.output_dir / "refresh_history.json",
+        )
+
+    def _write_early_stopping(self) -> None:
+        if not self.dynamic_hard_enabled:
+            return
+        save_json(
+            {
+                "best_dice": (
+                    None if self.best_dice == float("-inf") else self.best_dice
+                ),
+                "best_iteration": self.best_iteration,
+                "best_checkpoint": (
+                    str(self.best_checkpoint_path)
+                    if self.best_checkpoint_path is not None
+                    else None
+                ),
+                "patience_counter": self.patience_counter,
+                "early_stopping_patience": int(
+                    self.config["train"].get("early_stopping_patience", 0)
+                ),
+                "stop_iteration": self.stop_iteration,
+                "stop_reason": self.stop_reason,
+            },
+            self.output_dir / "early_stopping.json",
+        )
+
+    def _write_training_summary(self) -> None:
+        if not self.dynamic_hard_enabled:
+            return
+        save_json(
+            {
+                "iterations_completed": int(self.last_training_iteration),
+                "branch_sample_counts": self.branch_sample_counts,
+                "branch_patch_counts": self.branch_patch_counts,
+                "branch_effective_supervision_patches": (
+                    self.branch_effective_patch_counts
+                ),
+                "branch_ineffective_patches": self.branch_skipped_patch_counts,
+                "dynamic_hard_loss_mean": (
+                    self.dynamic_hard_loss_total
+                    / max(self.dynamic_hard_loss_patches, 1)
+                ),
+                "dynamic_hard_loss_patches": self.dynamic_hard_loss_patches,
+            },
+            self.output_dir / "training_summary.json",
+        )
+
+    def _trainer_checkpoint_state(self) -> dict:
+        return {
+            "dynamic_hard_enabled": self.dynamic_hard_enabled,
+            "refresh_cycle": self.refresh_cycle,
+            "seen_cases_since_refresh": sorted(self.seen_cases_since_refresh),
+            "refresh_history": self.refresh_history,
+            "patience_counter": self.patience_counter,
+            "stop_iteration": self.stop_iteration,
+            "stop_reason": self.stop_reason,
+            "last_training_iteration": self.last_training_iteration,
+            "branch_sample_counts": self.branch_sample_counts,
+            "branch_patch_counts": self.branch_patch_counts,
+            "branch_effective_patch_counts": self.branch_effective_patch_counts,
+            "branch_skipped_patch_counts": self.branch_skipped_patch_counts,
+            "dynamic_hard_loss_total": self.dynamic_hard_loss_total,
+            "dynamic_hard_loss_patches": self.dynamic_hard_loss_patches,
+        }
 
     def _sample_case_index(
         self,
@@ -306,6 +659,7 @@ class CUETrainer:
         confidence_sum = 0.0
         raw_foreground_sum = 0
         refined_foreground_sum = 0
+        dynamic_hard_loss_sum = 0.0
         voxel_sum = 0
         effective_patch_count = 0
         skipped_patch_count = 0
@@ -317,6 +671,11 @@ class CUETrainer:
             if high_confidence:
                 loss, patch_metrics = self._high_confidence_loss(image)
                 branch = "high"
+            elif self.dynamic_hard_enabled:
+                loss, patch_metrics = self._low_confidence_loss(
+                    image, partner_image, case, case_slicer
+                )
+                branch = "low"
             else:
                 loss, patch_metrics = self._low_confidence_loss(image, partner_image)
                 branch = "low"
@@ -329,6 +688,9 @@ class CUETrainer:
             raw_foreground_sum += int(patch_metrics["raw_foreground_voxels"])
             refined_foreground_sum += int(
                 patch_metrics["refined_foreground_voxels"]
+            )
+            dynamic_hard_loss_sum += float(
+                patch_metrics.get("dynamic_hard_loss", 0.0)
             )
             voxel_sum += int(patch_metrics["voxels"])
             if bool(patch_metrics["effective"]):
@@ -348,7 +710,7 @@ class CUETrainer:
         case_confidence = confidence_sum / patch_count
         if bool(self.config["method"].get("update_confidence_partition", False)):
             self.partition.update(case.name, case_confidence)
-        return {
+        metrics = {
             "branch": branch,
             "patches": patch_count,
             "effective_patches": effective_patch_count,
@@ -360,6 +722,11 @@ class CUETrainer:
                 refined_foreground_sum / max(voxel_sum, 1)
             ),
         }
+        if self.dynamic_hard_enabled:
+            metrics["dynamic_hard_loss"] = dynamic_hard_loss_sum / max(
+                patch_count, 1
+            )
+        return metrics
 
     def _estimate(
         self, image: torch.Tensor, partner: torch.Tensor
@@ -485,7 +852,11 @@ class CUETrainer:
         return loss, patch_metrics
 
     def _low_confidence_loss(
-        self, image: torch.Tensor, partner: torch.Tensor
+        self,
+        image: torch.Tensor,
+        partner: torch.Tensor,
+        case: CaseRecord | None = None,
+        case_slicer: tuple[slice, slice, slice] | None = None,
     ) -> tuple[torch.Tensor, dict[str, int | bool]]:
         view_count = int(self.config["method"].get("low_quality_views", 3))
         strong_views = self.views.make_views(image, partner, count=view_count + 2)[1:]
@@ -516,14 +887,75 @@ class CUETrainer:
             float(train_config["low_consistency_weight"]) * consistency
             + float(train_config["low_entropy_weight"]) * entropy
         )
+        dynamic_hard_loss = 0.0
+        if self.dynamic_hard_enabled:
+            if case is None or case_slicer is None:
+                raise ValueError(
+                    "Dynamic-hard supervision requires case and patch geometry"
+                )
+            target, confidence = self._dynamic_hard_patch(case, case_slicer)
+            confidence_threshold = float(
+                self.dynamic_hard_config.get("confidence_threshold", 0.0)
+            )
+            if confidence_threshold > 0.0:
+                confidence = confidence * (confidence >= confidence_threshold).float()
+            dynamic_hard_loss_tensor = masked_binary_cross_entropy(
+                student_probability,
+                target.detach(),
+                confidence.detach().clamp_min(1e-3),
+            )
+            dynamic_hard_loss = float(dynamic_hard_loss_tensor.detach().item())
+            loss = loss + float(
+                self.dynamic_hard_config.get("lambda_consensus", 0.05)
+            ) * dynamic_hard_loss_tensor
         threshold = float(self.config["method"]["probability_threshold"])
         prototype_voxels = int((prototype >= threshold).sum().item())
-        return loss, {
+        patch_metrics = {
             "raw_foreground_voxels": prototype_voxels,
             "refined_foreground_voxels": prototype_voxels,
             "voxels": prototype.numel(),
             "effective": True,
         }
+        if self.dynamic_hard_enabled:
+            patch_metrics["dynamic_hard_loss"] = dynamic_hard_loss
+        return loss, patch_metrics
+
+    def _dynamic_hard_patch(
+        self,
+        case: CaseRecord,
+        slicer: tuple[slice, slice, slice],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if self.dynamic_hard_cache is None:
+            raise RuntimeError("Dynamic-hard cache is not configured")
+        if self.dynamic_hard_memory_case != case.name:
+            self.dynamic_hard_cache_memory = self.dynamic_hard_cache.load_case(
+                case, self.refresh_cycle
+            )
+            self.dynamic_hard_memory_case = case.name
+        probability = self.dynamic_hard_cache_memory["joint_probability"]
+        confidence = self.dynamic_hard_cache_memory["joint_voxel_confidence"]
+        geometry = self.dynamic_hard_cache_memory["geometry"]
+        expected_shape = tuple(int(value) for value in geometry["padded_shape"])
+        if tuple(probability.shape[-3:]) != expected_shape:
+            raise ValueError(f"Dynamic-hard cache geometry mismatch: {case.name}")
+        target_patch = np.ascontiguousarray(
+            probability[(slice(None), *slicer)]
+        )
+        confidence_patch = np.ascontiguousarray(
+            confidence[(slice(None), *slicer)]
+        )
+        target = torch.from_numpy(target_patch).unsqueeze(0).to(self.device)
+        confidence_tensor = torch.from_numpy(confidence_patch).unsqueeze(0).to(
+            self.device
+        )
+        if tuple(target.shape) != tuple(confidence_tensor.shape):
+            raise ValueError(f"Dynamic-hard target/confidence mismatch: {case.name}")
+        if target.shape[-3:] != self.patch_size:
+            raise ValueError(
+                f"Dynamic-hard patch has unexpected shape for {case.name}: "
+                f"{tuple(target.shape)}"
+            )
+        return target, confidence_tensor
 
     def _patch(
         self,
@@ -533,7 +965,7 @@ class CUETrainer:
         patch = self.store.extract_patch(volume, slicer)
         return patch.unsqueeze(0).to(self.device, non_blocking=True)
 
-    def _validate(self, iteration: int) -> None:
+    def _validate(self, iteration: int) -> bool:
         if self.validation_gt_path is None:
             raise ValueError("Periodic validation requires --gt-path")
         validation_dir = self.output_dir / "validation" / f"iteration_{iteration:06d}"
@@ -546,13 +978,23 @@ class CUETrainer:
             self.validation_gt_path,
             validation_dir,
             self.logger,
-            save_predictions=True,
+            save_predictions=bool(
+                self.config["train"].get("save_validation_predictions", True)
+            ),
         )
         self.model.train(was_training)
         self.last_validation_iteration = iteration
         mean_dice = float(summary["mean_dice"])
         if mean_dice > self.best_dice:
+            self.patience_counter = 0
             self._save_best(iteration, mean_dice)
+        elif int(self.config["train"].get("early_stopping_patience", 0)) > 0:
+            self.patience_counter += 1
+        patience = int(self.config["train"].get("early_stopping_patience", 0))
+        should_stop = patience > 0 and self.patience_counter >= patience
+        if should_stop:
+            self.stop_iteration = iteration
+            self.stop_reason = "early_stopping_patience"
         self._save_latest(iteration)
         self.logger.info(
             "validation_iteration=%d mean_dice=%.6f mean_iou=%.6f",
@@ -560,6 +1002,8 @@ class CUETrainer:
             summary["mean_dice"],
             summary["mean_iou"],
         )
+        self._write_early_stopping()
+        return should_stop
 
     def _autocast(self):
         if not self.amp_enabled:
@@ -580,7 +1024,16 @@ class CUETrainer:
             trainer_generator_state=self.generator.get_state(),
             view_generator_state=self.views.generator.get_state(),
             view_python_generator_state=self.views.python_generator.getstate(),
+            scaler=self.scaler,
+            trainer_state=(
+                self._trainer_checkpoint_state()
+                if self.dynamic_hard_enabled
+                else None
+            ),
         )
+        self._write_refresh_history()
+        self._write_early_stopping()
+        self._write_training_summary()
         return path
 
     def _save_latest(self, iteration: int) -> Path:
@@ -609,11 +1062,38 @@ class CUETrainer:
         return path
 
     def _resume(self, path: str | Path) -> None:
-        checkpoint = load_checkpoint(path, self.model, self.optimizer)
+        checkpoint = load_checkpoint(path, self.model, self.optimizer, self.scaler)
         configured_lr = float(self.config["train"]["learning_rate"])
         for parameter_group in self.optimizer.param_groups:
             parameter_group["lr"] = configured_lr
         self.start_iteration = int(checkpoint.get("iteration", 0))
+        training_state = checkpoint.get("trainer_state", {})
+        self.refresh_cycle = int(training_state.get("refresh_cycle", 0))
+        self.seen_cases_since_refresh = set(
+            str(name) for name in training_state.get("seen_cases_since_refresh", [])
+        )
+        self.refresh_history = list(training_state.get("refresh_history", []))
+        self.patience_counter = int(training_state.get("patience_counter", 0))
+        self.stop_iteration = training_state.get("stop_iteration")
+        self.stop_reason = training_state.get("stop_reason")
+        self.last_training_iteration = int(
+            training_state.get("last_training_iteration", self.start_iteration)
+        )
+        for field, target in (
+            ("branch_sample_counts", self.branch_sample_counts),
+            ("branch_patch_counts", self.branch_patch_counts),
+            ("branch_effective_patch_counts", self.branch_effective_patch_counts),
+            ("branch_skipped_patch_counts", self.branch_skipped_patch_counts),
+        ):
+            for branch, value in training_state.get(field, {}).items():
+                if branch in target:
+                    target[branch] = int(value)
+        self.dynamic_hard_loss_total = float(
+            training_state.get("dynamic_hard_loss_total", 0.0)
+        )
+        self.dynamic_hard_loss_patches = int(
+            training_state.get("dynamic_hard_loss_patches", 0)
+        )
         best_dice = checkpoint.get("best_dice")
         best_iteration = checkpoint.get("best_iteration")
         if best_dice is not None:
@@ -638,9 +1118,9 @@ class CUETrainer:
             cuda_states = rng_state.get("torch_cuda", [])
             if torch.cuda.is_available() and cuda_states:
                 torch.cuda.set_rng_state_all(cuda_states)
-            trainer_state = rng_state.get("trainer_generator")
-            if trainer_state is not None:
-                self.generator.set_state(trainer_state)
+            generator_state = rng_state.get("trainer_generator")
+            if generator_state is not None:
+                self.generator.set_state(generator_state)
             view_state = rng_state.get("view_generator")
             if view_state is not None:
                 self.views.generator.set_state(view_state)
