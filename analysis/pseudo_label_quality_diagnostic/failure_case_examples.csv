@@ -1,0 +1,14 @@
+metric,failure_type,case_id,metric_score,original_dice,joint_dice,gt_foreground_voxels,original_foreground_voxels,joint_foreground_voxels,empty_original_prediction,empty_joint_prediction
+M0,high_score_low_dice,0001679853.nii.gz,1.0,0.0,0.0,47.0,0.0,0.0,1.0,1.0
+M0,high_score_low_dice,0017354579.nii.gz,1.0,0.0,0.0,2483.0,0.0,0.0,1.0,1.0
+M0,high_score_low_dice,0017452826.nii.gz,1.0,0.0,0.0,2098.0,0.0,0.0,1.0,1.0
+M0,high_score_low_dice,0018806748.nii.gz,1.0,0.0,0.0,26193.0,0.0,0.0,1.0,1.0
+M0,high_score_low_dice,0019873347.nii.gz,1.0,0.0,0.0,173.0,0.0,0.0,1.0,1.0
+M1,high_score_low_dice,0010392655.nii.gz,0.9863884902259838,0.0,0.0,124.0,1021.0,1015.0,0.0,0.0
+M2,high_score_low_dice,0000503556.nii.gz,1.0,0.0,0.0,132.0,84.0,90.0,0.0,0.0
+M2,high_score_low_dice,0009818705.nii.gz,1.0,0.0,0.0,131.0,2.0,1.0,0.0,0.0
+M2,high_score_low_dice,0010392655.nii.gz,1.0,0.0,0.0,124.0,1021.0,1015.0,0.0,0.0
+M3,high_score_low_dice,0010392655.nii.gz,0.9795307039440839,0.0,0.0,124.0,1021.0,1015.0,0.0,0.0
+M4,high_score_low_dice,0010392655.nii.gz,0.9872435238995493,0.0,0.0,124.0,1021.0,1015.0,0.0,0.0
+M5,high_score_low_dice,0010392655.nii.gz,0.9863884902259838,0.0,0.0,124.0,1021.0,1015.0,0.0,0.0
+M6,high_score_low_dice,0010392655.nii.gz,0.9661978121934001,0.0,0.0,124.0,1021.0,1015.0,0.0,0.0

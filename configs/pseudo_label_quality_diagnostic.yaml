@@ -1,0 +1,49 @@
+experiment:
+  seed: 2026
+  gpu_id: 0
+data:
+  image_dir: /data/hilab/datasets/WCH_MRI145/DWI/images
+  labels_dir: /data/hilab/datasets/WCH_MRI145/DWI/labels
+  split_json: /data/hilab/datasets/WCH_MRI145/DWI/split.json
+  split_key: train_cases
+  expected_cases: 101
+model:
+  voxtell_root: /home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk
+  model_dir: /home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model
+  text_encoder: /home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/Qwen3-Embedding-4B
+  checkpoint: /home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth
+  prompts:
+    - liver cancer
+    - liver tumor
+    - HCC
+    - hepatocellular carcinoma
+  device: cuda:0
+  text_device: cpu
+  text_dtype: bfloat16
+inference:
+  patch_size: [192, 192, 192]
+  tile_step_size: 0.5
+  gaussian_sigma_scale: 0.125
+  probability_threshold: 0.5
+  gaussian_fusion_domain: logits
+  preprocessing: nnUNet reorientation, nonzero crop, ZScoreNormalization, zero padding
+augmentation:
+  image_views_including_identity: 6
+  seed: 2026
+  scale: [0.95, 1.05]
+  offset: [-0.05, 0.05]
+  contrast: [0.90, 1.10]
+  signed_gamma: [0.90, 1.10]
+  bias_field_amplitude_max: 0.05
+  gaussian_noise_std_max: 0.03
+  geometry_transform: identity
+  inverse_geometry_transform: identity
+metrics:
+  chebyshev_bound_threshold: 0.8
+  bootstrap_replicates: 5000
+  bootstrap_seed: 20261117
+  m0_strata: 5
+  top_k: [20, 40, 59]
+  cache_probability_dtype: float32
+source_uncertainty_csv: /home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/diagnostic/dwi_uncertainty_train/per_case_uncertainty.csv
+source_uncertainty_summary: /home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/diagnostic/dwi_uncertainty_train/summary.json

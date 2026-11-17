@@ -1,0 +1,9 @@
+{
+  "raw_empty_cases": 20,
+  "raw_nonempty_cases": 81,
+  "mean_M0_on_raw_empty": 0.6681784218929481,
+  "mean_M0_on_raw_nonempty": 0.8506115958873455,
+  "M1_equals_M0_for_every_raw_nonempty_case": true,
+  "M1_new_signal_beyond_empty_gate": false,
+  "interpretation": "By definition M1 only sets raw-empty cases to zero; all nonempty cases retain exactly their M0 score. Its overall lift over M0 therefore comes entirely from empty prediction exclusion."
+}
