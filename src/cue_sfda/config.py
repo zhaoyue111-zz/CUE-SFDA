@@ -95,6 +95,27 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError("train.tile_step_size must be in (0, 1]")
     if int(config["train"].get("validation_every", 0)) < 0:
         raise ValueError("train.validation_every cannot be negative")
+    high_selection = config.get("high_selection", {})
+    high_selection_mode = str(high_selection.get("mode", "none"))
+    if high_selection_mode not in {
+        "none", "gradient_agreement", "cross_case_validation",
+        "semantic_subspace", "semantic_update_validation",
+    }:
+        raise ValueError(f"invalid high_selection.mode: {high_selection_mode}")
+    if int(high_selection.get("reference_count", 8)) < 2:
+        raise ValueError("high_selection.reference_count must be at least 2")
+    if int(high_selection.get("reference_refresh_interval", 100)) < 1:
+        raise ValueError("high_selection.reference_refresh_interval must be positive")
+    significance = float(high_selection.get("significance_level", 0.05))
+    if not 0.0 < significance < 0.5:
+        raise ValueError("high_selection.significance_level must be in (0, 0.5)")
+    energy = float(high_selection.get("spectral_energy", 0.9))
+    if not 0.0 < energy <= 1.0:
+        raise ValueError("high_selection.spectral_energy must be in (0, 1]")
+    if int(high_selection.get("tokens_per_case", 256)) < 1:
+        raise ValueError("high_selection.tokens_per_case must be positive")
+    if float(high_selection.get("robust_mad_multiplier", 3.0)) < 0.0:
+        raise ValueError("high_selection.robust_mad_multiplier cannot be negative")
     if int(config["train"].get("early_stopping_patience", 0)) < 0:
         raise ValueError("train.early_stopping_patience cannot be negative")
     if float(config["train"].get("high_foreground_weight", 1.0)) < 1.0:

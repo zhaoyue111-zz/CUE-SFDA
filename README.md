@@ -97,3 +97,7 @@ FFT style objective is undefined and is not replaced by a misleading input
 normalization. Only the configured DWI images are used. No auxiliary sequence,
 external dataset, or target annotation is available to adaptation. Target
 labels are read only by the explicitly requested evaluation step.
+
+## High 分支更新接纳对照
+
+`stage1-quality-routing` 分支提供四个独立 M1 Dynamic-hard High 更新接纳配置（GA、CUV、CSS、SUV）。它们复用原固定 High/Low 路由和 Low Dynamic-hard 训练流程，只决定当前 High 更新是否进入共享 Student。理论假设、缓存、计算量、参数和启动方式见 [`docs/high_selection.md`](docs/high_selection.md)。

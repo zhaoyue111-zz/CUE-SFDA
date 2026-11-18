@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
+import hashlib
 import json
 import random
 from pathlib import Path
@@ -20,6 +21,17 @@ from cue_sfda.method.dynamic_hard import (
     sample_coverage_index,
     source_checkpoint_signature,
 )
+from cue_sfda.high_selection import (
+    MODES as HIGH_SELECTION_MODES,
+    fit_subspace,
+    flatten_gradients,
+    relative_subspace_error,
+    robust_threshold,
+)
+from cue_sfda.high_selection.base import conditional_high_step, should_select_high
+from cue_sfda.high_selection import cross_case_validation, gradient_agreement, semantic_update_validation
+from cue_sfda.high_selection.feature_extractor import foreground_d5_tokens
+from cue_sfda.high_selection.reference_bank import ReferenceBank
 from cue_sfda.method.losses import (
     balanced_masked_binary_cross_entropy,
     bernoulli_kl_divergence,
@@ -82,6 +94,16 @@ class CUETrainer:
         self.amp_enabled = bool(config["model"].get("amp", True))
         self.amp_enabled = self.amp_enabled and self.device.type == "cuda"
         self.scaler = torch.amp.GradScaler("cuda", enabled=self.amp_enabled)
+        self.high_selection_config = dict(config.get("high_selection", {}))
+        self.high_selection_mode = str(self.high_selection_config.get("mode", "none"))
+        if self.high_selection_mode not in HIGH_SELECTION_MODES:
+            raise ValueError(f"invalid high_selection.mode: {self.high_selection_mode}")
+        self.high_reference_bank = ReferenceBank()
+        self.high_selection_refs = self.high_reference_bank.gradients
+        self.high_selection_features = self.high_reference_bank.features
+        self.high_selection_cache_iteration: int | None = None
+        self.high_selection_attempts = self.high_selection_accepts = self.high_selection_rejects = 0
+        self.high_selection_rng = random.Random(int(config["experiment"]["seed"]) + 7319)
         self.start_iteration = 0
         self.best_dice = float("-inf")
         self.best_iteration: int | None = None
@@ -113,6 +135,7 @@ class CUETrainer:
         self.branch_patch_counts = {"high": 0, "low": 0}
         self.branch_effective_patch_counts = {"high": 0, "low": 0}
         self.branch_skipped_patch_counts = {"high": 0, "low": 0}
+        self.optimizer_step_count = 0
         self.dynamic_hard_loss_total = 0.0
         self.dynamic_hard_loss_patches = 0
         if self.dynamic_hard_enabled:
@@ -660,6 +683,11 @@ class CUETrainer:
             "stop_iteration": self.stop_iteration,
             "stop_reason": self.stop_reason,
             "last_training_iteration": self.last_training_iteration,
+            "optimizer_step_count": self.optimizer_step_count,
+            "high_selection_attempts": self.high_selection_attempts,
+            "high_selection_accepts": self.high_selection_accepts,
+            "high_selection_rejects": self.high_selection_rejects,
+            "high_selection_rng_state": self.high_selection_rng.getstate(),
             "branch_sample_counts": self.branch_sample_counts,
             "branch_patch_counts": self.branch_patch_counts,
             "branch_effective_patch_counts": self.branch_effective_patch_counts,
@@ -786,6 +814,8 @@ class CUETrainer:
         effective_patch_count = 0
         skipped_patch_count = 0
         patch_count = len(case_slicers)
+        selected_high = should_select_high(high_confidence, self.high_selection_mode)
+        manual_high_scale = float(self.scaler.get_scale()) if selected_high else 1.0
         for patch_index, case_slicer in enumerate(case_slicers):
             partner_slicer = partner_slicers[patch_index % len(partner_slicers)]
             image = self._patch(case_volume, case_slicer)
@@ -804,7 +834,12 @@ class CUETrainer:
             if not torch.isfinite(loss):
                 message = f"Non-finite loss for {case.name} patch {patch_index}"
                 raise FloatingPointError(message)
-            self.scaler.scale(loss).backward()
+            if selected_high:
+                # Manual fixed scaling lets a rejected High attempt leave the
+                # GradScaler state untouched while retaining AMP underflow protection.
+                (loss * manual_high_scale).backward()
+            else:
+                self.scaler.scale(loss).backward()
             loss_sum += float(loss.detach().item())
             confidence_sum += self.partition.scores[case.name]
             raw_foreground_sum += int(patch_metrics["raw_foreground_voxels"])
@@ -819,16 +854,32 @@ class CUETrainer:
                 effective_patch_count += 1
             else:
                 skipped_patch_count += 1
-        self.scaler.unscale_(self.optimizer)
+        if not selected_high:
+            self.scaler.unscale_(self.optimizer)
         gradient_denominator = max(effective_patch_count, 1)
         for parameter in self.runtime.trainable_parameters:
             if parameter.grad is not None:
-                parameter.grad.div_(gradient_denominator)
+                parameter.grad.div_(gradient_denominator * manual_high_scale)
+        selection: dict = {"accepted": True, "reason": "mode_none"}
+        if high_confidence and self.high_selection_mode != "none":
+            candidate = flatten_gradients(tuple(
+                parameter.grad if parameter.grad is not None else torch.zeros_like(parameter)
+                for parameter in self.runtime.trainable_parameters
+            ))
+            selection = self._decide_high_update(case, candidate)
         max_norm = float(self.config["train"]["max_grad_norm"])
         torch.nn.utils.clip_grad_norm_(self.runtime.trainable_parameters, max_norm)
-        if effective_patch_count > 0:
-            self.scaler.step(self.optimizer)
-        self.scaler.update()
+        if effective_patch_count > 0 and bool(selection["accepted"]):
+            if selected_high:
+                conditional_high_step(self.optimizer, accepted=True, effective=True)
+            else:
+                self.scaler.step(self.optimizer)
+            self.optimizer_step_count += 1
+        if not selected_high:
+            self.scaler.update()
+        if selected_high and not bool(selection["accepted"]):
+            # Rejected High attempts must not change optimizer or GradScaler state.
+            self.optimizer.zero_grad(set_to_none=True)
         case_confidence = confidence_sum / patch_count
         if bool(self.config["method"].get("update_confidence_partition", False)):
             self.partition.update(case.name, case_confidence)
@@ -848,7 +899,220 @@ class CUETrainer:
             metrics["dynamic_hard_loss"] = dynamic_hard_loss_sum / max(
                 patch_count, 1
             )
+        if high_confidence and self.high_selection_mode != "none":
+            metrics.update({
+                "selection_mode": self.high_selection_mode,
+                "accepted": int(bool(selection["accepted"])),
+                "rejection_reason": str(selection.get("reason", "")),
+                "high_attempt_count": self.high_selection_attempts,
+                "high_accept_count": self.high_selection_accepts,
+                "high_reject_count": self.high_selection_rejects,
+                "low_step_count": self.branch_sample_counts.get("low", 0),
+                "optimizer_step_count": self.optimizer_step_count,
+            })
         return metrics
+
+    def _selection_reference_cases(self, excluded: str) -> list[CaseRecord]:
+        high_cases = [case for case in self.train_cases if self.partition.is_high_confidence(case.name)]
+        pool = [case for case in high_cases if case.name != excluded]
+        count = max(2, int(self.high_selection_config.get("reference_count", 8)))
+        count = min(count, len(pool))
+        if count < 2:
+            return []
+        self.high_selection_rng.shuffle(pool)
+        return sorted(pool[:count], key=lambda case: case.name)
+
+    def _refresh_high_selection_cache(self, iteration: int, excluded: str) -> None:
+        mode = self.high_selection_mode
+        refs = self._selection_reference_cases(excluded)
+        self.high_selection_refs = {}
+        self.high_selection_features = {}
+        for reference in refs:
+            if mode in {"gradient_agreement", "cross_case_validation", "semantic_update_validation"}:
+                try:
+                    self.high_selection_refs[reference.name] = self._high_case_gradient(reference)
+                except (ValueError, FloatingPointError, RuntimeError):
+                    # Invalid/empty reference data remains unavailable and can
+                    # cause a safe rejection; it never implies unconditional use.
+                    pass
+            if mode in {"semantic_subspace", "semantic_update_validation"}:
+                try:
+                    self.high_selection_features[reference.name] = self._semantic_case_features(reference)
+                except (ValueError, FloatingPointError, RuntimeError):
+                    pass
+        digest = hashlib.sha256()
+        for parameter in self.runtime.trainable_parameters:
+            digest.update(parameter.detach().cpu().contiguous().numpy().tobytes())
+        fingerprint = digest.hexdigest()
+        self.high_reference_bank.replace(
+            gradients=self.high_selection_refs,
+            features=self.high_selection_features,
+            generated_iteration=iteration,
+            model_fingerprint=fingerprint,
+        )
+        self.high_selection_refs = self.high_reference_bank.gradients
+        self.high_selection_features = self.high_reference_bank.features
+        self.high_selection_cache_iteration = int(iteration)
+        save_json({
+            "mode": mode,
+            "reference_case_ids": sorted(set(self.high_selection_refs) | set(self.high_selection_features)),
+            "generated_iteration": int(iteration),
+            "source_checkpoint": source_checkpoint_signature(self.config["model"]),
+            "adapted_student_lora_sha256": fingerprint,
+            "cache_refresh_interval": int(self.high_selection_config.get("reference_refresh_interval", 100)),
+            "stale_reference_policy": "snapshot references are approximate until the next configured refresh",
+            "config": self.high_selection_config,
+        }, self.output_dir / "high_selection_cache_metadata.json")
+
+    def _high_case_gradient(self, case: CaseRecord) -> torch.Tensor:
+        """Full-case High gradient. autograd.grad does not populate parameter .grad."""
+        volume, slicers = self.store.sliding_window(case, self.tile_step_size)
+        total: list[torch.Tensor | None] = [None] * len(self.runtime.trainable_parameters)
+        effective = 0
+        reference_scale = float(self.scaler.get_scale())
+        was_training = self.model.training
+        self.model.eval()
+        try:
+            for slicer in slicers:
+                loss, metrics = self._high_confidence_loss(self._patch(volume, slicer))
+                if not bool(metrics["effective"]) or not bool(torch.isfinite(loss)):
+                    continue
+                grads = torch.autograd.grad(loss * reference_scale, self.runtime.trainable_parameters, allow_unused=True)
+                for index, grad in enumerate(grads):
+                    if grad is None:
+                        continue
+                    grad = grad.detach().float() / reference_scale
+                    total[index] = grad.clone() if total[index] is None else total[index] + grad
+                effective += 1
+        finally:
+            self.model.train(was_training)
+        if effective == 0:
+            raise ValueError(f"reference case has no effective High pseudo-label patches: {case.name}")
+        result = flatten_gradients(tuple(
+            torch.zeros_like(parameter) if grad is None else grad / effective
+            for parameter, grad in zip(self.runtime.trainable_parameters, total, strict=True)
+        ))
+        if result is None:
+            raise ValueError(f"reference case produced a zero or non-finite gradient: {case.name}")
+        return result.cpu()
+
+    def _semantic_case_features(self, case: CaseRecord) -> np.ndarray:
+        """Sample source-LoRA d5_pre_head tokens under teacher foreground."""
+        volume, slicers = self.store.sliding_window(case, self.tile_step_size)
+        limit = max(1, int(self.high_selection_config.get("tokens_per_case", 256)))
+        chunks = []
+        was_training = self.model.training
+        self.model.eval()
+        try:
+            with torch.no_grad(), lora_disabled(self.model):
+                for slicer in slicers:
+                    image = self._patch(volume, slicer)
+                    seed = int(self.config["experiment"]["seed"]) + sum(case.name.encode("utf-8")) + len(chunks)
+                    tokens = foreground_d5_tokens(
+                        self.model,
+                        image,
+                        self.embedding,
+                        float(self.config["method"]["probability_threshold"]),
+                        limit,
+                        seed,
+                        self._autocast,
+                    )
+                    if tokens.size:
+                        chunks.append(tokens)
+        finally:
+            self.model.train(was_training)
+        if not chunks:
+            raise ValueError(f"semantic feature extraction found no candidate foreground: {case.name}")
+        values = np.concatenate(chunks, axis=0)
+        seed = int(self.config["experiment"]["seed"]) + sum(case.name.encode("utf-8"))
+        rng = np.random.default_rng(seed)
+        if len(values) > limit:
+            values = values[rng.choice(len(values), size=limit, replace=False)]
+        return values.astype(np.float32, copy=False)
+
+    def _decide_high_update(self, case: CaseRecord, candidate: torch.Tensor | None) -> dict:
+        self.high_selection_attempts += 1
+        result: dict
+        if candidate is None:
+            result = {"accepted": False, "reason": "zero_or_nonfinite_candidate_gradient"}
+        else:
+            iteration = self.last_training_iteration + 1
+            interval = max(1, int(self.high_selection_config.get("reference_refresh_interval", 100)))
+            if self.high_selection_cache_iteration is None or iteration - self.high_selection_cache_iteration >= interval:
+                self._refresh_high_selection_cache(iteration, case.name)
+            refs = self.high_reference_bank.gradient_references(case.name, candidate.device)
+            mode = self.high_selection_mode
+            details: dict = {}
+            accepted = False
+            reason = "insufficient_reference_data"
+            grad_ok = False
+            update_ok = False
+            semantic_ok = False
+            if mode == "gradient_agreement":
+                decision = gradient_agreement.decide(candidate, refs)
+                accepted, reason = bool(decision["accepted"]), str(decision["reason"])
+                details.update({key: value for key, value in decision.items() if key not in {"accepted", "reason"}})
+            if mode in {"cross_case_validation", "semantic_update_validation"}:
+                decision = cross_case_validation.decide(candidate, refs, float(self.config["train"]["learning_rate"]), float(self.high_selection_config.get("significance_level", 0.05)))
+                update_ok = bool(decision["accepted"])
+                details.update({key: value for key, value in decision.items() if key not in {"accepted", "reason"}})
+                if mode == "cross_case_validation":
+                    accepted, reason = update_ok, str(decision["reason"])
+            if mode in {"semantic_subspace", "semantic_update_validation"}:
+                try:
+                    candidate_features = self._semantic_case_features(case)
+                    semantic_refs = self.high_reference_bank.feature_references(case.name)
+                    basis, rank, spectral = fit_subspace(semantic_refs, float(self.high_selection_config.get("spectral_energy", 0.9)))
+                    residual = relative_subspace_error(candidate_features, basis)
+                    loo_errors = []
+                    for omitted in semantic_refs:
+                        remaining = {key: value for key, value in semantic_refs.items() if key != omitted}
+                        loo_basis, _, _ = fit_subspace(remaining, float(self.high_selection_config.get("spectral_energy", 0.9)))
+                        loo_errors.append(relative_subspace_error(semantic_refs[omitted], loo_basis))
+                    threshold = robust_threshold(loo_errors, float(self.high_selection_config.get("robust_mad_multiplier", 3.0)))
+                    semantic_ok = residual <= threshold
+                    details.update(subspace_rank=rank, retained_spectral_energy=spectral, relative_reconstruction_error=residual, reference_case_count=len(semantic_refs), semantic_accepted=semantic_ok, semantic_threshold=threshold)
+                    if mode == "semantic_subspace":
+                        accepted, reason = semantic_ok, "within_leave_one_case_out_subspace_threshold" if semantic_ok else "semantic_residual_above_threshold"
+                except (ValueError, np.linalg.LinAlgError, FloatingPointError, RuntimeError) as error:
+                    details.update(semantic_accepted=False, semantic_error=str(error))
+                    if mode == "semantic_subspace":
+                        reason = "semantic_subspace_unavailable"
+            if mode == "semantic_update_validation":
+                decision = semantic_update_validation.decide(semantic_ok, update_ok)
+                accepted, reason = bool(decision["accepted"]), str(decision["reason"])
+                details.update({key: value for key, value in decision.items() if key not in {"accepted", "reason"}})
+            result = {"accepted": accepted, "reason": reason, **details}
+        self.high_selection_accepts += int(bool(result["accepted"]))
+        self.high_selection_rejects += int(not bool(result["accepted"]))
+        row = {"iteration": self.last_training_iteration + 1, "candidate_case": case.name,
+               "selection_mode": self.high_selection_mode, "accepted": int(bool(result["accepted"])),
+               "rejection_reason": "" if result["accepted"] else result["reason"],
+               "high_attempt_count": self.high_selection_attempts,
+               "high_accept_count": self.high_selection_accepts,
+               "high_reject_count": self.high_selection_rejects,
+               "low_step_count": self.branch_sample_counts.get("low", 0),
+               "optimizer_step_count": self.optimizer_step_count + int(bool(result["accepted"])),
+               "reference_refresh_iteration": self.high_selection_cache_iteration, **result}
+        import csv
+        path = self.output_dir / "high_selection_training_log.csv"
+        fields = [
+            "iteration", "candidate_case", "selection_mode", "accepted", "rejection_reason",
+            "high_attempt_count", "high_accept_count", "high_reject_count", "low_step_count",
+            "optimizer_step_count", "reference_refresh_iteration", "reason",
+            "gradient_agreement_mean", "gradient_agreement_std", "reference_count",
+            "estimated_delta_mean", "estimated_delta_std", "estimated_delta_upper_bound",
+            "subspace_rank", "retained_spectral_energy", "relative_reconstruction_error",
+            "reference_case_count", "semantic_accepted", "update_accepted", "final_accepted",
+            "semantic_threshold", "semantic_error",
+        ]
+        write_header = not path.is_file() or path.stat().st_size == 0
+        with path.open("a", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fields)
+            if write_header:
+                writer.writeheader()
+            writer.writerow(row)
+        return result
 
     def _estimate(
         self, image: torch.Tensor, partner: torch.Tensor
@@ -900,6 +1164,7 @@ class CUETrainer:
         image: torch.Tensor,
     ) -> tuple[torch.Tensor, dict[str, int | bool]]:
         method_config = self.config["method"]
+        was_training = self.model.training
         teacher_image = image
         self.model.eval()
         with torch.no_grad():
@@ -938,9 +1203,10 @@ class CUETrainer:
             del teacher_logits
             del teacher_probability
             del propagated
-        self.model.train()
+        self.model.train(was_training)
         with self._autocast():
             student_logits = self.model(teacher_image, self.embedding)
+        self.model.train(was_training)
         student_probability = torch.sigmoid(student_logits.float())
         # Once a case passes Eq. (11), the paper supervises the complete
         # affinity-refined pseudo-label rather than masking it a second time.
@@ -1205,6 +1471,12 @@ class CUETrainer:
         self.last_training_iteration = int(
             training_state.get("last_training_iteration", self.start_iteration)
         )
+        self.optimizer_step_count = int(training_state.get("optimizer_step_count", 0))
+        self.high_selection_attempts = int(training_state.get("high_selection_attempts", 0))
+        self.high_selection_accepts = int(training_state.get("high_selection_accepts", 0))
+        self.high_selection_rejects = int(training_state.get("high_selection_rejects", 0))
+        if training_state.get("high_selection_rng_state") is not None:
+            self.high_selection_rng.setstate(training_state["high_selection_rng_state"])
         for field, target in (
             ("branch_sample_counts", self.branch_sample_counts),
             ("branch_patch_counts", self.branch_patch_counts),
