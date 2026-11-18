@@ -195,7 +195,7 @@ cython_debug/
 .pypirc
 
 # CUE-SFDA experiment artifacts
-outputs/
+#outputs/
 
 # Cursor
 #  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
@@ -211,3 +211,9 @@ __marimo__/
 
 
 /.idea
+
+*.pt
+*.nii.gz
+*.npy
+*.npz
+*.nii

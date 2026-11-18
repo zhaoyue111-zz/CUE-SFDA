@@ -1,0 +1,9 @@
+{
+  "best_dice": 0.3407987316410043,
+  "best_iteration": 1650,
+  "best_checkpoint": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/outputs/ablation/M1_dynamic_hard/checkpoints/best_iteration_001650_dice_0.340799.pt",
+  "patience_counter": 7,
+  "early_stopping_patience": 10,
+  "stop_iteration": 2000,
+  "stop_reason": "max_iterations"
+}

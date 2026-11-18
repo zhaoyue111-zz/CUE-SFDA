@@ -1,0 +1,17 @@
+{
+  "mode": "joint_empty_to_low",
+  "ranking_score": "joint_uncertainty",
+  "reference_threshold": 0.5,
+  "reference_high": 59,
+  "reference_low": 42,
+  "high": 59,
+  "low": 42,
+  "skip": 0,
+  "no_response": 17,
+  "response_present": 84,
+  "no_response_all_raw_predictions_empty": true,
+  "response_present_all_raw_predictions_nonempty": true,
+  "rounding_rule": "Python round(nearest, ties-to-even)",
+  "target_high": 59,
+  "empty_predictions_forced_low": true
+}
