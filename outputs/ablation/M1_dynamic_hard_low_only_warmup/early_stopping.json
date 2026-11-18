@@ -1,0 +1,9 @@
+{
+  "best_dice": null,
+  "best_iteration": null,
+  "best_checkpoint": null,
+  "patience_counter": 0,
+  "early_stopping_patience": 0,
+  "stop_iteration": null,
+  "stop_reason": null
+}

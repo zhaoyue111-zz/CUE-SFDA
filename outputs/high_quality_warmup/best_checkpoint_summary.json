@@ -1,0 +1,203 @@
+{
+  "selection_metric": "High mean real Dice on training GT (oracle diagnostic)",
+  "eligible_epochs": [
+    5,
+    10,
+    15,
+    20
+  ],
+  "best_epoch": 5,
+  "best_high_mean_dice": 0.5569148014202869,
+  "best_metrics": {
+    "epoch": 5,
+    "all_mean_dice": 0.33687500020144084,
+    "high_mean_dice": 0.5569148014202869,
+    "low_mean_dice": 0.027771469917823827,
+    "delta_all": -0.0013659550207350546,
+    "delta_high": -0.008234647050933352,
+    "delta_low": 0.008282921878828942
+  },
+  "best_checkpoint": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/outputs/high_quality_warmup/checkpoints/best_high.pt",
+  "last_epoch": 20,
+  "last_checkpoint": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/outputs/high_quality_warmup/checkpoints/last.pt",
+  "group_case_change_counts_and_extremes": {
+    "high": {
+      "improved": 15,
+      "degraded": 44,
+      "unchanged": 0,
+      "largest_improvements": [
+        {
+          "epoch": 5,
+          "case_id": "0015026134.nii.gz",
+          "group": "high",
+          "dice": 0.5321242193555298,
+          "delta_dice": 0.15848317414642854,
+          "baseline_dice": 0.37364104520910124
+        },
+        {
+          "epoch": 5,
+          "case_id": "0017405680.nii.gz",
+          "group": "high",
+          "dice": 0.36222308591674224,
+          "delta_dice": 0.09527571746482422,
+          "baseline_dice": 0.266947368451918
+        },
+        {
+          "epoch": 5,
+          "case_id": "0003081296.nii.gz",
+          "group": "high",
+          "dice": 0.7102173491177222,
+          "delta_dice": 0.0840260691562228,
+          "baseline_dice": 0.6261912799614994
+        },
+        {
+          "epoch": 5,
+          "case_id": "0013482554.nii.gz",
+          "group": "high",
+          "dice": 0.7656557699974141,
+          "delta_dice": 0.061702868386983134,
+          "baseline_dice": 0.703952901610431
+        },
+        {
+          "epoch": 5,
+          "case_id": "0015978449.nii.gz",
+          "group": "high",
+          "dice": 0.6355236139817493,
+          "delta_dice": 0.05509243651245299,
+          "baseline_dice": 0.5804311774692963
+        }
+      ],
+      "largest_degradations": [
+        {
+          "epoch": 5,
+          "case_id": "0018411622.nii.gz",
+          "group": "high",
+          "dice": 0.46638054371010296,
+          "delta_dice": -0.20605812877583674,
+          "baseline_dice": 0.6724386724859397
+        },
+        {
+          "epoch": 5,
+          "case_id": "0032834064.nii.gz",
+          "group": "high",
+          "dice": 0.26133019427537785,
+          "delta_dice": -0.09386980577620613,
+          "baseline_dice": 0.355200000051584
+        },
+        {
+          "epoch": 5,
+          "case_id": "0032961497.nii.gz",
+          "group": "high",
+          "dice": 0.21653878949560623,
+          "delta_dice": -0.08983375960900497,
+          "baseline_dice": 0.3063725491046112
+        },
+        {
+          "epoch": 5,
+          "case_id": "0017554294.nii.gz",
+          "group": "high",
+          "dice": 0.2747104767230081,
+          "delta_dice": -0.05686847066740053,
+          "baseline_dice": 0.3315789473904086
+        },
+        {
+          "epoch": 5,
+          "case_id": "0016804070.nii.gz",
+          "group": "high",
+          "dice": 0.6747638327024611,
+          "delta_dice": -0.04957634329103744,
+          "baseline_dice": 0.7243401759934985
+        }
+      ]
+    },
+    "low": {
+      "improved": 8,
+      "degraded": 19,
+      "unchanged": 15,
+      "largest_improvements": [
+        {
+          "epoch": 5,
+          "case_id": "0019971803.nii.gz",
+          "group": "low",
+          "dice": 0.2721382290988902,
+          "delta_dice": 0.11868554346038704,
+          "baseline_dice": 0.15345268563850314
+        },
+        {
+          "epoch": 5,
+          "case_id": "0013263151.nii.gz",
+          "group": "low",
+          "dice": 0.14954888148375295,
+          "delta_dice": 0.07893032477074546,
+          "baseline_dice": 0.07061855671300749
+        },
+        {
+          "epoch": 5,
+          "case_id": "0015743530.nii.gz",
+          "group": "low",
+          "dice": 0.08130999437940967,
+          "delta_dice": 0.07388258043637885,
+          "baseline_dice": 0.0074274139430308105
+        },
+        {
+          "epoch": 5,
+          "case_id": "0008006851.nii.gz",
+          "group": "low",
+          "dice": 0.1546860782625718,
+          "delta_dice": 0.06578576991439349,
+          "baseline_dice": 0.08890030834817832
+        },
+        {
+          "epoch": 5,
+          "case_id": "0002265234.nii.gz",
+          "group": "low",
+          "dice": 0.20557491303038763,
+          "delta_dice": 0.027003484312275394,
+          "baseline_dice": 0.17857142871811224
+        }
+      ],
+      "largest_degradations": [
+        {
+          "epoch": 5,
+          "case_id": "0011295982.nii.gz",
+          "group": "low",
+          "dice": 0.18584952667698432,
+          "delta_dice": -0.052547802229913926,
+          "baseline_dice": 0.23839732890689824
+        },
+        {
+          "epoch": 5,
+          "case_id": "0016224160.nii.gz",
+          "group": "low",
+          "dice": 0.01335113491232636,
+          "delta_dice": -0.00031006734083885955,
+          "baseline_dice": 0.013661202253165219
+        },
+        {
+          "epoch": 5,
+          "case_id": "0032540537.nii.gz",
+          "group": "low",
+          "dice": 6.369426747535397e-10,
+          "delta_dice": -4.994209603187745e-10,
+          "baseline_dice": 1.1363636350723141e-09
+        },
+        {
+          "epoch": 5,
+          "case_id": "0010325750.nii.gz",
+          "group": "low",
+          "dice": 2.9154518941937455e-10,
+          "delta_dice": -4.5472346674012645e-10,
+          "baseline_dice": 7.46268656159501e-10
+        },
+        {
+          "epoch": 5,
+          "case_id": "0016011685.nii.gz",
+          "group": "low",
+          "dice": 2.3255813899405083e-09,
+          "delta_dice": -4.5219638012121976e-10,
+          "baseline_dice": 2.777777770061728e-09
+        }
+      ]
+    }
+  }
+}

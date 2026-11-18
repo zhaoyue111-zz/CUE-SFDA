@@ -1,0 +1,14 @@
+{
+  "cache_version": 1,
+  "refresh_history": [
+    {
+      "refresh_cycle": 1,
+      "trigger_iteration": 42,
+      "covered_cases": 42,
+      "iterations_since_previous_refresh": 42,
+      "teacher_type": "student_snapshot"
+    }
+  ],
+  "seen_cases_since_refresh": [],
+  "coverage_mode": true
+}

@@ -1,0 +1,21 @@
+{
+  "iterations_completed": 42,
+  "branch_sample_counts": {
+    "high": 0,
+    "low": 42
+  },
+  "branch_patch_counts": {
+    "high": 0,
+    "low": 174
+  },
+  "branch_effective_supervision_patches": {
+    "high": 0,
+    "low": 174
+  },
+  "branch_ineffective_patches": {
+    "high": 0,
+    "low": 0
+  },
+  "dynamic_hard_loss_mean": 0.0035331765637515306,
+  "dynamic_hard_loss_patches": 174
+}
