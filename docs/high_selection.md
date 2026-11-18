@@ -15,11 +15,13 @@ VoxTell 的 `return_features=True` 真实接口返回 `d5_pre_head`，这是最�
 - **CSS (`semantic_subspace`)**：对除候选病例外的固定参考病例前景 token 做归一化 SVD，取累计谱能量达到 `spectral_energy` 的最小子空间。候选相对重建残差与参考病例 leave-one-case-out 残差的 median + `robust_mad_multiplier * 1.4826*MAD` 比较。候选不会参与自身子空间或阈值构造。有效病例/分解不足时拒绝；该残差不是伪标签错误率。
 - **SUV (`semantic_update_validation`)**：独立计算 CSS 和 CUV 判定，只在两者同时通过时接纳（AND）；没有手工加权分数，也不额外运行 GA 判定。
 
-所有模式 `none`（默认）会绕过样本接纳代码，沿用原有 scaler backward、梯度裁剪、optimizer/scaler step 顺序。开启接纳后，High 梯度使用当前 GradScaler scale 手动缩放，判断前再反缩放；High 被拒绝时不调用 optimizer 或 scaler step/update。Low 仍原样调用原始 scaler 路径。
+所有模式 `none`（默认）会绕过样本接纳代码，沿用原有 scaler backward、梯度裁剪、optimizer/scaler step 顺序。开启接纳后，High 仍使用 `scaler.scale().backward()` 和恰好一次 `scaler.unscale_()`，判断读取未缩放梯度。有限梯度被拒绝时用原 scale 清理 GradScaler 的临时 unscale 状态，序列化的 scale/growth tracker 保持不变；溢出时按 GradScaler 的标准 skip/backoff 流程执行。Low 仍原样使用基线 AMP 路径。更新计数依据 GradScaler 的 overflow 标志，不把溢出跳过的步骤计为成功。
 
 ## 缓存与计算
 
-参考病例从固定 High 路由中用 `experiment.seed` 派生的 RNG 无放回抽样，候选病例排除在外。每次刷新按配置顺序逐例生成数据，不并存计算图；梯度向量和语义 token 留在 CPU。缓存元数据写到实验输出 `high_selection_cache_metadata.json`，包括病例 ID、生成迭代、源权重文件签名、LoRA 参数 SHA-256、刷新间隔和配置。刷新间隔内的参考证据是过期快照近似，不会假装与当前 Student 同步；低接纳率不会触发无条件训练退化。
+参考病例从固定 High 路由中用 `experiment.seed` 派生的 RNG 无放回抽样，候选病例排除在外。每次刷新按配置顺序逐例生成数据，不并存计算图；梯度向量、语义 token 和子空间 basis 留在 CPU。刷新时一次性计算全参考 basis、每个参考病例的排除自身 basis，以及构造稳健阈值所需的双病例排除残差；候选判断只取对应缓存 basis 并计算候选残差，不再做 SVD。缓存元数据写到实验输出 `high_selection_cache_metadata.json`，包括参考病例 ID、生成迭代、源权重文件签名、LoRA 参数 SHA-256、缓存版本、刷新间隔和配置。刷新间隔内的参考证据是过期快照近似，不会假装与当前 Student 同步；低接纳率不会触发无条件训练退化。
+
+High Selection 缓存作为内容哈希 sidecar 与 checkpoint 绑定保存，包括参考梯度、特征、候选排除子空间、rank、谱能量、阈值、抽样 RNG 和缓存生成指纹。checkpoint 记录 sidecar 文件名、SHA-256、缓存版本和 checkpoint Student 指纹；替换 checkpoint 后再清理该路径不再引用的旧 sidecar。恢复时校验 sidecar 哈希，再比对模式/参数/路由/训练病例/源权重签名和当前 checkpoint Student 指纹；缓存生成指纹允许早于 checkpoint 指纹，以保留刷新间隔内合法的历史快照。缓存版本或生成迭代不一致会明确报错。旧 checkpoint 若没有 High Selection 状态，会明确记录并废弃旧缓存，在下一个 High 候选上安全重建；不会静默复用。
 
 额外工作量按每次缓存刷新估计（reference_count 为 R；单病例 P 个 patch）：
 
@@ -27,8 +29,8 @@ VoxTell 的 `return_features=True` 真实接口返回 `d5_pre_head`，这是最�
 |---|---|---|
 | GA | 刷新时约 `2RP` 次 High 前向、`RP` 次反向（每 patch 一次 source teacher 和一次 Student）；当前候选的反向属于原训练 | R 个 CPU 梯度向量 |
 | CUV | 与 GA 相同；统计计算仅向量点积 | R 个 CPU 梯度向量 |
-| CSS | 刷新时 `RP` 次 source-teacher 特征前向；每个 High 候选还需当前病例 `P` 次特征前向 | R×tokens_per_case×channels 的 CPU 特征 |
-| SUV | 梯度参考的 `2RP` 次前向、`RP` 次反向，加语义参考的 `RP` 次前向；每个 High 候选另有 `P` 次特征前向 | CPU 梯度与特征 |
+| CSS | 刷新时 `RP` 次 source-teacher 特征前向，加一次全参考及 leave-one/two-out SVD 缓存构造；每个候选 `P` 次特征前向和一次残差计算 | R×tokens_per_case×channels 特征及排除病例 basis，均在 CPU |
+| SUV | 梯度参考的 `2RP` 次前向、`RP` 次反向，加语义参考的 `RP` 次前向和一次 SVD 缓存构造；每个候选另有 `P` 次特征前向 | CPU 梯度、特征与 basis |
 
 单张 3D patch 图驻留 GPU；参考病例数、token 数和刷新间隔分别控制计算与缓存，不保证 11GB GPU 下的实际速度。每个 High 候选接纳结果逐次追加到 `high_selection_training_log.csv`，含拒绝原因和模式对应统计。
 

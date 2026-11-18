@@ -4,6 +4,7 @@ from cue_sfda.high_selection.statistics import (
     pairwise_gradient_agreement,
 )
 from cue_sfda.high_selection.semantic_subspace import (
+    build_semantic_cache,
     fit_subspace,
     relative_subspace_error,
     robust_threshold,
@@ -15,5 +16,5 @@ MODES = {"none", "gradient_agreement", "cross_case_validation", "semantic_subspa
 __all__ = [
     "MODES", "flatten_gradients", "one_sided_delta_test",
     "pairwise_gradient_agreement", "fit_subspace", "relative_subspace_error",
-    "robust_threshold", "ReferenceBank",
+    "robust_threshold", "ReferenceBank", "build_semantic_cache",
 ]

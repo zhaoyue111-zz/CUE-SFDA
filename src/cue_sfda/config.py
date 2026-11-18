@@ -102,8 +102,12 @@ def validate_config(config: dict[str, Any]) -> None:
         "semantic_subspace", "semantic_update_validation",
     }:
         raise ValueError(f"invalid high_selection.mode: {high_selection_mode}")
+    if high_selection_mode != "none" and str(config.get("dynamic_hard", {}).get("mode", "none")) != "dynamic_hard":
+        raise ValueError("High Selection modes require the M1 Dynamic-hard training path")
     if int(high_selection.get("reference_count", 8)) < 2:
         raise ValueError("high_selection.reference_count must be at least 2")
+    if high_selection_mode in {"semantic_subspace", "semantic_update_validation"} and int(high_selection.get("reference_count", 8)) < 4:
+        raise ValueError("CSS/SUV require high_selection.reference_count of at least 4")
     if int(high_selection.get("reference_refresh_interval", 100)) < 1:
         raise ValueError("high_selection.reference_refresh_interval must be positive")
     significance = float(high_selection.get("significance_level", 0.05))
