@@ -1,0 +1,26 @@
+{
+  "mode": "semantic_subspace",
+  "reference_case_ids": [
+    "0004918328.nii.gz",
+    "0008446207.nii.gz",
+    "0011024068.nii.gz",
+    "0017811498.nii.gz",
+    "0019873347.nii.gz",
+    "0020946113.nii.gz",
+    "0032710370.nii.gz",
+    "0033923781.nii.gz"
+  ],
+  "generated_iteration": 1212,
+  "snapshot_student_fingerprint": "eacf119294d996670e702de3243e71290d1b674ab68b6f0aadb8f98c2c35bc90",
+  "cache_version": 13,
+  "semantic_cache_error": null,
+  "config": {
+    "mode": "semantic_subspace",
+    "reference_count": 8,
+    "reference_refresh_interval": 100,
+    "significance_level": 0.05,
+    "spectral_energy": 0.9,
+    "robust_mad_multiplier": 3.0,
+    "tokens_per_case": 256
+  }
+}
