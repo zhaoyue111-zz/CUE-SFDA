@@ -19,6 +19,9 @@ from cue_sfda.modeling.lora import (
 )
 
 
+_TORCHVISION_NMS_LIBRARY = None
+
+
 class DynamicVoxTell(nn.Module):
     """VoxTell forward pass with positional encodings derived from patch size."""
 
@@ -156,7 +159,26 @@ def _encode_prompt(
         payload = torch.load(cache_path, map_location="cpu", weights_only=True)
         embedding = payload["embedding"] if isinstance(payload, dict) else payload
         return embedding.float()
-    from transformers import AutoModel, AutoTokenizer
+    # Transformers 4.57 imports torchvision while resolving Qwen3Model.
+    # Some mixed CUDA installs have a working torch but a torchvision wheel
+    # without the compiled torchvision::nms operator. Text embedding does not
+    # use torchvision, so register only the missing schema and let the import
+    # continue. Keep the Library alive for the process lifetime.
+    try:
+        import torchvision  # noqa: F401
+    except Exception:
+        for module_name in list(sys.modules):
+            if module_name == "torchvision" or module_name.startswith("torchvision."):
+                sys.modules.pop(module_name, None)
+        try:
+            global _TORCHVISION_NMS_LIBRARY
+            _TORCHVISION_NMS_LIBRARY = torch.library.Library("torchvision", "DEF")
+            _TORCHVISION_NMS_LIBRARY.define(
+                "nms(Tensor boxes, Tensor scores, float iou_threshold) -> Tensor"
+            )
+        except Exception:
+            pass
+    from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer
     from voxtell.utils.text_embedding import last_token_pool, wrap_with_instruction
 
     tokenizer = AutoTokenizer.from_pretrained(
@@ -165,15 +187,22 @@ def _encode_prompt(
         local_files_only=True,
     )
     dtype = torch.float16 if device.type == "cuda" else torch.float32
-    backbone = (
-        AutoModel.from_pretrained(
+    try:
+        backbone = AutoModel.from_pretrained(
             str(text_encoder),
             local_files_only=True,
             torch_dtype=dtype,
         )
-        .eval()
-        .to(device)
-    )
+    except (ValueError, KeyError):
+        # The local Qwen3-Embedding checkpoint declares Qwen3ForCausalLM.
+        # Older Transformers mappings may not expose its base Qwen3Model via
+        # AutoModel, while AutoModelForCausalLM supports the saved architecture.
+        backbone = AutoModelForCausalLM.from_pretrained(
+            str(text_encoder),
+            local_files_only=True,
+            torch_dtype=dtype,
+        )
+    backbone = backbone.eval().to(device)
     tokens = tokenizer(
         wrap_with_instruction([prompt]),
         padding=True,
@@ -183,7 +212,10 @@ def _encode_prompt(
     )
     tokens = {name: value.to(device) for name, value in tokens.items()}
     with torch.inference_mode():
-        hidden = backbone(**tokens).last_hidden_state
+        outputs = backbone(**tokens, output_hidden_states=True)
+        hidden = getattr(outputs, "last_hidden_state", None)
+        if hidden is None:
+            hidden = outputs.hidden_states[-1]
         embedding = last_token_pool(hidden, tokens["attention_mask"])
         embedding = embedding.reshape(1, 1, -1).float().cpu()
     cache_dir.mkdir(parents=True, exist_ok=True)
