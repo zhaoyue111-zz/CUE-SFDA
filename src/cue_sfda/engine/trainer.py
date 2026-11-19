@@ -756,6 +756,7 @@ class CUETrainer:
                     "probability_threshold", "random_walk_size", "random_walk_steps",
                     "random_walk_alpha", "affinity_temperature",
                     "random_walk_score_pooling", "preserve_raw_foreground",
+                    "high_pseudo_target",
                     "min_pseudo_foreground_voxels",
                 )
             },
@@ -945,7 +946,9 @@ class CUETrainer:
             image = self._patch(case_volume, case_slicer)
             partner_image = self._patch(partner_volume, partner_slicer)
             if high_confidence:
-                loss, patch_metrics = self._high_confidence_loss(image)
+                loss, patch_metrics = self._high_confidence_loss(
+                    image, case, case_slicer
+                )
                 branch = "high"
             elif self.dynamic_hard_enabled:
                 loss, patch_metrics = self._low_confidence_loss(
@@ -1146,7 +1149,9 @@ class CUETrainer:
         self.model.train(was_training)
         try:
             for slicer in slicers:
-                loss, metrics = self._high_confidence_loss(self._patch(volume, slicer))
+                loss, metrics = self._high_confidence_loss(
+                    self._patch(volume, slicer), case, slicer
+                )
                 if not bool(metrics["effective"]) or not bool(torch.isfinite(loss)):
                     continue
                 # autograd.grad returns tensors without populating .grad, so
@@ -1355,6 +1360,8 @@ class CUETrainer:
     def _high_confidence_loss(
         self,
         image: torch.Tensor,
+        case: CaseRecord | None = None,
+        case_slicer: tuple[slice, slice, slice] | None = None,
     ) -> tuple[torch.Tensor, dict[str, int | bool]]:
         method_config = self.config["method"]
         was_training = self.model.training
@@ -1368,8 +1375,15 @@ class CUETrainer:
                         self.embedding,
                         return_features=True,
                     )
-            teacher_probability = torch.sigmoid(teacher_logits.float())
+            source_probability = torch.sigmoid(teacher_logits.float())
             threshold = float(method_config["probability_threshold"])
+            confidence = None
+            if str(method_config.get("high_pseudo_target", "source")) == "prompt_consensus":
+                if case is None or case_slicer is None:
+                    raise ValueError("prompt-consensus High targets require case geometry")
+                teacher_probability, confidence = self._dynamic_hard_patch(case, case_slicer)
+            else:
+                teacher_probability = source_probability
             raw_voxels = int((teacher_probability >= threshold).sum().item())
             propagated = affinity_random_walk(
                 probability=teacher_probability,
@@ -1389,8 +1403,8 @@ class CUETrainer:
             refined = propagated.clamp(0.0, 1.0)
             if bool(method_config.get("preserve_raw_foreground", False)):
                 # The paper's 2-D full-resolution graph has no pooling stage.
-                # Preserve source seeds in the memory-bounded 3-D extension so
-                # adaptive pooling cannot erase small tumor pseudo-labels.
+                # Preserve teacher foreground seeds so adaptive pooling cannot
+                # erase small structures in the memory-bounded 3-D extension.
                 refined = torch.maximum(refined, teacher_probability)
             del features
             del teacher_logits
@@ -1403,7 +1417,7 @@ class CUETrainer:
         student_probability = torch.sigmoid(student_logits.float())
         # Once a case passes Eq. (11), the paper supervises the complete
         # affinity-refined pseudo-label rather than masking it a second time.
-        weight = torch.ones_like(refined)
+        weight = torch.ones_like(refined) if confidence is None else confidence
         pseudo_voxels = int((refined >= threshold).sum().item())
         minimum = int(method_config.get("min_pseudo_foreground_voxels", 8))
         patch_metrics = {

@@ -1,0 +1,107 @@
+data:
+  image_dir: /data/hilab/datasets/WCH_MRI145/DWI/images
+  patch_size:
+  - 192
+  - 192
+  - 192
+  split_json: /data/hilab/datasets/WCH_MRI145/DWI/split.json
+dynamic_hard:
+  cache_dir: projects/css_liver/results/liver_css_anchor_050/dynamic_hard_cache
+  confidence_threshold: 0.0
+  image_temperature: 0.15
+  lambda_consensus: 0.05
+  max_refresh_cycles: 1
+  mode: dynamic_hard
+  prompt_temperature: 0.15
+  prompts:
+  - liver
+  - whole liver
+  - liver organ
+  - hepatic organ
+  refresh_tile_step_size: 1.0
+  standard_prompt: liver
+evaluation:
+  label_value: 1
+  threshold: 0.55
+  tile_step_size: 0.5
+experiment:
+  gpu_id: 0
+  output_dir: projects/css_liver/.staging/liver_css_whole_liver_threshold_55
+  seed: 42
+high_selection:
+  mode: semantic_subspace
+  reference_count: 8
+  reference_refresh_interval: 100
+  robust_mad_multiplier: 3.0
+  significance_level: 0.05
+  spectral_energy: 0.9
+  tokens_per_case: 256
+method:
+  affinity_temperature: 0.15
+  calibration_cases: 0
+  chebyshev_threshold: 0.8
+  confidence_ema: 0.9
+  gamma_range:
+  - 0.7
+  - 1.5
+  high_quality_sampling_probability: 0.75
+  iterations: 500
+  low_quality_views: 3
+  min_case_pseudo_foreground_voxels: 64
+  min_pseudo_foreground_voxels: 8
+  mixup_alpha: 0.75
+  noise_std: 0.08
+  num_views: 10
+  preserve_raw_foreground: true
+  probability_threshold: 0.5
+  quality_threshold: 0.5
+  random_walk_alpha: 0.5
+  random_walk_score_pooling: average
+  random_walk_size:
+  - 16
+  - 32
+  - 32
+  random_walk_steps: 4
+  routing_high_cases: 59
+  routing_mode: joint_empty_to_low
+  routing_prompts:
+  - liver
+  - whole liver
+  - liver organ
+  - hepatic organ
+  routing_reference_partition: /home/ubuntu/zy/pythoncode/sfda/CUE-SFDA/outputs/dwi_only_liver/confidence_partition.json
+  routing_uncertainty_csv: /home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/diagnostic/dwi_uncertainty_liver/per_case_uncertainty.csv
+  source_only_confidence: true
+  style_mix_probability: 0.75
+  update_confidence_partition: false
+model:
+  amp: true
+  lora_alpha: 16.0
+  lora_dropout: 0.0
+  lora_linear_targets:
+  - text_projection
+  - final_mask_projection
+  lora_rank: 8
+  model_dir: /home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model
+  prompt: whole liver
+  text_encoder: /home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/Qwen3-Embedding-4B
+  voxtell_root: /home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk
+train:
+  balance_high_bce: true
+  balance_low_consistency: true
+  early_stopping_patience: 3
+  high_bce_weight: 1.0
+  high_dice_weight: 1.0
+  high_foreground_weight: 5.0
+  learning_rate: 1.0e-05
+  log_every: 10
+  low_consistency_weight: 1.0
+  low_entropy_weight: 0.0
+  low_foreground_weight: 5.0
+  max_grad_norm: 1.0
+  save_every: 50
+  save_validation_predictions: false
+  tile_step_size: 0.5
+  validate_at_start: true
+  validation_every: 50
+  weight_decay: 0.0001

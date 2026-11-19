@@ -90,6 +90,11 @@ def validate_config(config: dict[str, Any]) -> None:
             )
         if not int(config["method"].get("routing_high_cases", 0)):
             raise ValueError("dynamic-hard M1 requires method.routing_high_cases")
+    high_pseudo_target = str(config["method"].get("high_pseudo_target", "source"))
+    if high_pseudo_target not in {"source", "prompt_consensus"}:
+        raise ValueError("method.high_pseudo_target must be source or prompt_consensus")
+    if high_pseudo_target == "prompt_consensus" and dynamic_mode != "dynamic_hard":
+        raise ValueError("prompt_consensus High targets require the Dynamic-hard cache")
     tile_step_size = float(config["train"].get("tile_step_size", 0.5))
     if not 0.0 < tile_step_size <= 1.0:
         raise ValueError("train.tile_step_size must be in (0, 1]")

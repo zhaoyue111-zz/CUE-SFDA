@@ -1,0 +1,9 @@
+{
+  "best_dice": 0.732767272525535,
+  "best_iteration": 0,
+  "best_checkpoint": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/outputs/high_selection/CSS_liver/checkpoints/best_iteration_000000_dice_0.732767.pt",
+  "patience_counter": 3,
+  "early_stopping_patience": 10,
+  "stop_iteration": null,
+  "stop_reason": null
+}

@@ -17,12 +17,16 @@ def affinity_random_walk(
 ) -> torch.Tensor:
     if probability.ndim != 5 or features.ndim != 5:
         raise ValueError("Random-walk inputs must be five-dimensional")
+    anchor_strength = float(alpha)
+    if not 0.0 <= anchor_strength <= 1.0:
+        raise ValueError("random-walk alpha must be in [0, 1]")
     if score_pooling == "max":
         score = F.adaptive_max_pool3d(probability, graph_size).float()
     elif score_pooling == "average":
         score = F.adaptive_avg_pool3d(probability, graph_size).float()
     else:
         raise ValueError(f"Unknown score pooling mode: {score_pooling}")
+    anchor = score
     feature = F.adaptive_avg_pool3d(features, graph_size).float()
     pixels = None
     if image is not None:
@@ -60,9 +64,9 @@ def affinity_random_walk(
                     propagated = propagated + weight * neighbor_score
                     normalizer = normalizer + weight
         propagated = propagated / normalizer.clamp_min(1e-6)
-        # Eq. (20) is an unanchored transition P_{t+1} = I_hat P_t.
-        # ``alpha`` is retained in the API for checkpoint compatibility only.
-        score = propagated
+        # Liver organ experiments can retain part of the initial teacher score
+        # while propagating. alpha=0 preserves the original unanchored update.
+        score = (1.0 - anchor_strength) * propagated + anchor_strength * anchor
     refined = F.interpolate(
         score, size=output_size, mode="trilinear", align_corners=False
     )
