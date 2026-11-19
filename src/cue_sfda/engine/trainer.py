@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
+import hashlib
 import json
 import random
 import shutil
@@ -32,13 +33,30 @@ from cue_sfda.method.uncertainty import (
     pseudo_label_quality,
 )
 from cue_sfda.modeling.voxtell import VoxTellRuntime
-from cue_sfda.modeling.lora import lora_disabled
 from cue_sfda.utils import save_json
 from cue_sfda.sat_rescue import evaluate_sat_assisted
 from cue_sfda.method.retrieval import StableSupportMemory
 from cue_sfda.method.consensus import ConsensusCache, ConsensusCacheBuilder
 from cue_sfda.modeling.voxtell import load_prompt_embedding
 from cue_sfda.method.high_pseudo_cache import HighPseudoCache
+from cue_sfda.high_selection import ReferenceBank, build_semantic_cache, relative_subspace_error
+from cue_sfda.high_selection.amp import (
+    conditional_scaler_step,
+    gradients_are_finite,
+    reset_scaler_after_rejection,
+    scaler_will_skip_step,
+)
+from cue_sfda.high_selection.feature_extractor import foreground_d5_tokens
+from cue_sfda.high_selection.statistics import flatten_gradients
+from cue_sfda.modeling.lora import lora_disabled
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 class CUETrainer:
@@ -116,6 +134,18 @@ class CUETrainer:
         self.amp_enabled = bool(config["model"].get("amp", True))
         self.amp_enabled = self.amp_enabled and self.device.type == "cuda"
         self.scaler = torch.amp.GradScaler("cuda", enabled=self.amp_enabled)
+        self.high_selection_config = dict(config.get("high_selection", {}))
+        self.high_selection_mode = str(self.high_selection_config.get("mode", "none"))
+        if self.high_selection_mode not in {"none", "semantic_subspace"}:
+            raise ValueError("this repository supports high_selection.mode none/semantic_subspace")
+        self.high_reference_bank = ReferenceBank()
+        self.high_selection_cache_iteration: int | None = None
+        self.high_selection_rng = random.Random(seed + 7319)
+        self.high_selection_attempts = 0
+        self.high_selection_accepts = 0
+        self.high_selection_rejects = 0
+        self.optimizer_step_count = 0
+        self.high_selection_pending_row: dict | None = None
         routing_config = config.get("optimizer_routing", {})
         self.optimizer_routing_enabled = bool(routing_config.get("enabled", False))
         self.optimizer_routing_mode = str(routing_config.get("mode", "cosine"))
@@ -232,8 +262,10 @@ class CUETrainer:
             self._resume(resume)
             # Rebuild fixed D routing metadata after resume. Checkpoints carry
             # confidence scores, but routing skip/rescue sets are derived state.
-            if self.config["method"].get("routing_uncertainty_csv"):
+            if self.config["method"].get("routing_assignments_csv") or self.config["method"].get("routing_uncertainty_csv"):
                 self._initialize_routing(str(self.config["method"].get("routing_mode", "original")))
+        elif self.config["method"].get("routing_assignments_csv"):
+            self._initialize_routing(str(self.config["method"].get("routing_mode", "original")))
         elif confidence_partition is not None:
             self._load_partition(confidence_partition)
         if self.consensus_enabled:
@@ -251,7 +283,7 @@ class CUETrainer:
             self._validate(0)
         if not self.partition.scores:
             routing_mode = str(self.config["method"].get("routing_mode", "original"))
-            if self.config["method"].get("routing_uncertainty_csv"):
+            if self.config["method"].get("routing_assignments_csv") or self.config["method"].get("routing_uncertainty_csv"):
                 self._initialize_routing(routing_mode)
             else:
                 self._calibrate()
@@ -365,6 +397,65 @@ class CUETrainer:
 
     def _initialize_routing(self, mode: str) -> None:
         method_config = self.config["method"]
+        frozen_path = method_config.get("routing_assignments_csv")
+        if frozen_path:
+            import csv
+
+            source = Path(frozen_path).expanduser().resolve()
+            expected = {case.name for case in self.train_cases}
+            by_id = {
+                Path(case_id).name.removesuffix(".nii.gz").removesuffix(".nii"): case_id
+                for case_id in expected
+            }
+            scores: dict[str, float] = {}
+            skipped: set[str] = set()
+            with source.open(encoding="utf-8-sig", newline="") as handle:
+                reader = csv.DictReader(handle)
+                if not {"case_id", "assigned_branch"}.issubset(reader.fieldnames or []):
+                    raise ValueError(f"Frozen routing CSV has invalid columns: {source}")
+                for row in reader:
+                    normalized = Path(str(row["case_id"]).strip()).name.removesuffix(".nii.gz").removesuffix(".nii")
+                    if normalized not in by_id:
+                        raise ValueError(f"Frozen routing has an unknown training case: {row['case_id']}")
+                    case_name = by_id[normalized]
+                    if case_name in scores:
+                        raise ValueError(f"Frozen routing contains duplicate case: {case_name}")
+                    branch = str(row["assigned_branch"]).strip().lower()
+                    if branch not in {"high", "low", "skip"}:
+                        raise ValueError(f"Frozen routing has invalid branch {branch!r} for {case_name}")
+                    scores[case_name] = 1.0 if branch == "high" else 0.0
+                    if branch == "skip":
+                        skipped.add(case_name)
+            if set(scores) != expected:
+                raise ValueError(
+                    "Frozen routing does not match training split: "
+                    f"missing={sorted(expected - set(scores))[:5]} extra={sorted(set(scores) - expected)[:5]}"
+                )
+            self.partition.initialize(scores)
+            self.skipped_case_names = skipped
+            self.routing_metadata = {
+                "mode": "frozen_csv",
+                "source": str(source),
+                "high": sum(value > self.partition.quality_threshold for value in scores.values()),
+                "low": sum(value <= self.partition.quality_threshold for value in scores.values()) - len(skipped),
+                "skip": len(skipped),
+            }
+            target = self.output_dir / "routing.csv"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if source != target.resolve():
+                shutil.copyfile(source, target)
+            summary_path = source.parent / "routing_summary.json"
+            summary = self.routing_metadata
+            if summary_path.is_file():
+                with summary_path.open(encoding="utf-8") as handle:
+                    summary = {**json.load(handle), "source": str(source), "mode": "frozen_csv"}
+            save_json(summary, self.output_dir / "routing_summary.json")
+            self.logger.info(
+                "Loaded frozen routing=%s high=%d low=%d skip=%d",
+                source, self.routing_metadata["high"],
+                self.routing_metadata["low"], self.routing_metadata["skip"],
+            )
+            return
         assignments, scores, metadata = build_routing_assignments(
             [case.name for case in self.train_cases],
             mode=mode,
@@ -787,6 +878,8 @@ class CUETrainer:
         self, case: CaseRecord, partner: CaseRecord, iteration: int = 0
     ) -> dict[str, float | str | int]:
         high_confidence = self.partition.is_high_confidence(case.name)
+        selected_high = high_confidence and self.high_selection_mode != "none"
+        scale_before = float(self.scaler.get_scale()) if selected_high else 1.0
         case_volume, case_slicers = self.store.sliding_window(
             case,
             self.tile_step_size,
@@ -859,10 +952,50 @@ class CUETrainer:
         if self.optimizer_routing_enabled and not high_confidence:
             route_groups = self._apply_optimizer_routing(high_reference_gradients, iteration)
         max_norm = float(self.config["train"]["max_grad_norm"])
-        torch.nn.utils.clip_grad_norm_(self.runtime.trainable_parameters, max_norm)
-        if effective_patch_count > 0:
-            self.scaler.step(self.optimizer)
-        self.scaler.update()
+        step_executed = False
+        selection: dict = {"accepted": True, "reason": "mode_none"}
+        high_overflow = False
+        if selected_high:
+            high_overflow = not gradients_are_finite(self.runtime.trainable_parameters)
+            if high_overflow:
+                selection = {"accepted": False, "reason": "gradient_overflow"}
+            else:
+                candidate = flatten_gradients(tuple(
+                    parameter.grad if parameter.grad is not None else torch.zeros_like(parameter)
+                    for parameter in self.runtime.trainable_parameters
+                ))
+                try:
+                    selection = self._decide_css_high_update(case, candidate, iteration)
+                except Exception:
+                    reset_scaler_after_rejection(self.scaler, scale_before)
+                    self.optimizer.zero_grad(set_to_none=True)
+                    raise
+            step_executed = conditional_scaler_step(
+                self.scaler,
+                self.optimizer,
+                self.runtime.trainable_parameters,
+                accepted=bool(selection["accepted"]),
+                effective=effective_patch_count > 0,
+                overflow=high_overflow,
+                max_norm=max_norm,
+                scale_before=scale_before,
+            )
+            self.optimizer_step_count += int(step_executed)
+            self._write_high_selection_row(selection, case, iteration, step_executed)
+        else:
+            # Preserve the historical Low and mode=none AMP path exactly.
+            torch.nn.utils.clip_grad_norm_(self.runtime.trainable_parameters, max_norm)
+            if effective_patch_count > 0:
+                will_skip = (
+                    scaler_will_skip_step(self.scaler, self.optimizer)
+                    if self.high_selection_mode != "none" else False
+                )
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+                if self.high_selection_mode != "none" and not will_skip:
+                    self.optimizer_step_count += 1
+            else:
+                self.scaler.update()
         case_confidence = confidence_sum / patch_count
         if bool(self.config["method"].get("update_confidence_partition", False)):
             self.partition.update(case.name, case_confidence)
@@ -880,6 +1013,165 @@ class CUETrainer:
             "relation_loss": relation_loss_sum / max(effective_patch_count, 1),
             "route_groups": route_groups,
         }
+
+    def _selection_reference_cases(self, excluded: str) -> list[CaseRecord]:
+        pool = [
+            case for case in self.train_cases
+            if self.partition.is_high_confidence(case.name) and case.name != excluded
+        ]
+        count = int(self.high_selection_config.get("reference_count", 8))
+        if len(pool) < max(4, count):
+            return []
+        self.high_selection_rng.shuffle(pool)
+        return sorted(pool[:count], key=lambda case: case.name)
+
+    def _refresh_css_cache(self, iteration: int, excluded: str) -> None:
+        references = self._selection_reference_cases(excluded)
+        features: dict[str, np.ndarray] = {}
+        for reference in references:
+            try:
+                features[reference.name] = self._semantic_case_features(reference)
+            except (ValueError, FloatingPointError, RuntimeError):
+                continue
+        evidence = None
+        error = None
+        try:
+            evidence = build_semantic_cache(
+                features,
+                float(self.high_selection_config.get("spectral_energy", 0.9)),
+                float(self.high_selection_config.get("robust_mad_multiplier", 3.0)),
+            )
+        except (ValueError, np.linalg.LinAlgError, FloatingPointError) as exc:
+            error = str(exc)
+        self.high_reference_bank.replace(
+            gradients={},
+            features=features,
+            reference_case_ids=[case.name for case in references],
+            semantic_evidence=evidence,
+            semantic_cache_error=error,
+            generated_iteration=iteration,
+            model_fingerprint=self._lora_fingerprint(),
+        )
+        self.high_selection_cache_iteration = int(iteration)
+        save_json({
+            "mode": self.high_selection_mode,
+            "reference_case_ids": self.high_reference_bank.reference_case_ids,
+            "generated_iteration": int(iteration),
+            "snapshot_student_fingerprint": self.high_reference_bank.model_fingerprint,
+            "cache_version": self.high_reference_bank.cache_version,
+            "semantic_cache_error": error,
+            "config": self.high_selection_config,
+        }, self.output_dir / "high_selection_cache_metadata.json")
+
+    def _semantic_case_features(self, case: CaseRecord) -> np.ndarray:
+        volume, slicers = self.store.sliding_window(case, self.tile_step_size)
+        limit = max(1, int(self.high_selection_config.get("tokens_per_case", 256)))
+        chunks = []
+        was_training = self.model.training
+        self.model.eval()
+        try:
+            with torch.no_grad(), lora_disabled(self.model):
+                for index, slicer in enumerate(slicers):
+                    image = self._patch(volume, slicer)
+                    seed = int(self.config["experiment"]["seed"]) + sum(case.name.encode("utf-8")) + index
+                    tokens = foreground_d5_tokens(
+                        self.model,
+                        image,
+                        self.embedding,
+                        float(self.config["method"]["probability_threshold"]),
+                        limit,
+                        seed,
+                        self._autocast,
+                    )
+                    if tokens.size:
+                        chunks.append(tokens)
+        finally:
+            self.model.train(was_training)
+        if not chunks:
+            raise ValueError(f"semantic feature extraction found no foreground for {case.name}")
+        values = np.concatenate(chunks, axis=0)
+        rng = np.random.default_rng(int(self.config["experiment"]["seed"]) + sum(case.name.encode("utf-8")))
+        if len(values) > limit:
+            values = values[rng.choice(len(values), size=limit, replace=False)]
+        return values.astype(np.float32, copy=False)
+
+    def _decide_css_high_update(
+        self, case: CaseRecord, candidate: torch.Tensor | None, iteration: int
+    ) -> dict:
+        self.high_selection_attempts += 1
+        result: dict
+        if candidate is None:
+            result = {"accepted": False, "reason": "zero_or_nonfinite_candidate_gradient"}
+        else:
+            interval = max(1, int(self.high_selection_config.get("reference_refresh_interval", 100)))
+            if self.high_selection_cache_iteration is None or iteration - self.high_selection_cache_iteration >= interval:
+                self._refresh_css_cache(iteration, case.name)
+            try:
+                evidence = self.high_reference_bank.semantic_for(case.name)
+                features = self._semantic_case_features(case)
+                residual = relative_subspace_error(features, evidence["basis"].numpy())
+                threshold = float(evidence["threshold"])
+                accepted = residual <= threshold
+                result = {
+                    "accepted": accepted,
+                    "reason": "within_leave_one_case_out_subspace_threshold" if accepted else "semantic_residual_above_threshold",
+                    "relative_reconstruction_error": residual,
+                    "semantic_threshold": threshold,
+                    "subspace_rank": int(evidence["rank"]),
+                    "retained_spectral_energy": float(evidence["spectral_energy"]),
+                    "reference_case_count": int(evidence["reference_case_count"]),
+                }
+            except (ValueError, np.linalg.LinAlgError, FloatingPointError, RuntimeError) as exc:
+                result = {"accepted": False, "reason": "semantic_subspace_unavailable", "semantic_error": str(exc)}
+        self.high_selection_accepts += int(bool(result["accepted"]))
+        self.high_selection_rejects += int(not bool(result["accepted"]))
+        result.update({
+            "attempt": self.high_selection_attempts,
+            "accept_count": self.high_selection_accepts,
+            "reject_count": self.high_selection_rejects,
+        })
+        return result
+
+    def _write_high_selection_row(
+        self, result: dict, case: CaseRecord, iteration: int, step_executed: bool
+    ) -> None:
+        import csv
+        path = self.output_dir / "high_selection_training_log.csv"
+        row = {
+            "iteration": iteration,
+            "candidate_case": case.name,
+            "selection_mode": self.high_selection_mode,
+            "accepted": int(bool(result["accepted"])),
+            "rejection_reason": "" if result["accepted"] else result.get("reason", ""),
+            "high_attempt_count": self.high_selection_attempts,
+            "high_accept_count": self.high_selection_accepts,
+            "high_reject_count": self.high_selection_rejects,
+            "optimizer_step_count": self.optimizer_step_count,
+            "optimizer_step_executed": int(step_executed),
+            "update_skip_reason": "" if step_executed else result.get("reason", ""),
+            "reference_refresh_iteration": self.high_selection_cache_iteration,
+            **result,
+        }
+        fields = [
+            "iteration", "candidate_case", "selection_mode", "accepted", "rejection_reason",
+            "high_attempt_count", "high_accept_count", "high_reject_count",
+            "optimizer_step_count", "optimizer_step_executed", "update_skip_reason",
+            "reference_refresh_iteration", "reason", "semantic_error", "semantic_threshold",
+            "relative_reconstruction_error", "subspace_rank", "retained_spectral_energy",
+            "reference_case_count",
+        ]
+        write_header = not path.is_file() or path.stat().st_size == 0
+        with path.open("a", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
+            if write_header:
+                writer.writeheader()
+            writer.writerow(row)
+
+    def _lora_fingerprint(self) -> str:
+        digest = hashlib.sha256()
+        for parameter in self.runtime.trainable_parameters:
+            digest.update(parameter.detach().cpu().contiguous().numpy().tobytes())
+        return digest.hexdigest()
 
     def _prime_stage2_memory(self, high_indices: list[int]) -> None:
         """Populate stable support memory once before the first query update."""
@@ -1628,6 +1920,47 @@ class CUETrainer:
         return torch.autocast(device_type="cuda", dtype=torch.float16)
 
     def _save(self, path: Path, iteration: int) -> Path:
+        trainer_state = {
+            "patience_counter": int(self.patience_counter),
+            "stop_iteration": self.stop_iteration,
+            "stop_reason": self.stop_reason,
+            "refresh_cycle": int(self.refresh_cycle),
+            "seen_cases_since_refresh": sorted(self.seen_cases_since_refresh),
+            "refresh_history": self.refresh_history,
+            "consensus_mode": self.consensus_mode,
+        }
+        if self.high_selection_mode != "none":
+            selection_state = {
+                "schema_version": 1,
+                "mode": self.high_selection_mode,
+                "config_fingerprint": self._high_selection_config_fingerprint(),
+                "checkpoint_student_fingerprint": self._lora_fingerprint(),
+                "cache_iteration": self.high_selection_cache_iteration,
+                "cache_version": self.high_reference_bank.cache_version,
+                "cache_model_fingerprint": self.high_reference_bank.model_fingerprint,
+                "reference_bank": self.high_reference_bank.state_dict(),
+                "rng_state": self.high_selection_rng.getstate(),
+                "attempts": self.high_selection_attempts,
+                "accepts": self.high_selection_accepts,
+                "rejects": self.high_selection_rejects,
+                "optimizer_step_count": self.optimizer_step_count,
+            }
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary_sidecar = path.with_name(path.name + ".high_selection.tmp")
+            torch.save(selection_state, temporary_sidecar)
+            digest = _file_sha256(temporary_sidecar)
+            sidecar_name = f"{path.name}.high_selection.{digest[:20]}.pt"
+            sidecar_path = path.with_name(sidecar_name)
+            if sidecar_path.exists():
+                temporary_sidecar.unlink()
+            else:
+                temporary_sidecar.replace(sidecar_path)
+            trainer_state["high_selection_sidecar"] = {
+                "file": sidecar_name,
+                "sha256": digest,
+                "cache_version": self.high_reference_bank.cache_version,
+                "checkpoint_student_fingerprint": selection_state["checkpoint_student_fingerprint"],
+            }
         save_checkpoint(
             path=path,
             model=self.model,
@@ -1641,17 +1974,14 @@ class CUETrainer:
             trainer_generator_state=self.generator.get_state(),
             view_generator_state=self.views.generator.get_state(),
             view_python_generator_state=self.views.python_generator.getstate(),
-            trainer_state={
-                "patience_counter": int(self.patience_counter),
-                "stop_iteration": self.stop_iteration,
-                "stop_reason": self.stop_reason,
-                "refresh_cycle": int(self.refresh_cycle),
-                "seen_cases_since_refresh": sorted(self.seen_cases_since_refresh),
-                "refresh_history": self.refresh_history,
-                "consensus_mode": self.consensus_mode,
-            },
+            trainer_state=trainer_state,
             scaler_state=self.scaler.state_dict() if self.amp_enabled else None,
         )
+        if "high_selection_sidecar" in trainer_state:
+            active_sidecar = trainer_state["high_selection_sidecar"]["file"]
+            for old_sidecar in path.parent.glob(path.name + ".high_selection.*.pt"):
+                if old_sidecar.name != active_sidecar:
+                    old_sidecar.unlink()
         self._save_early_stopping()
         self._write_refresh_history()
         return path
@@ -1674,6 +2004,8 @@ class CUETrainer:
         for previous_path in previous_paths:
             if previous_path != path and previous_path.is_file():
                 previous_path.unlink()
+                for sidecar in previous_path.parent.glob(previous_path.name + ".high_selection.*.pt"):
+                    sidecar.unlink()
         self.logger.info(
             "Saved best LoRA checkpoint: %s (iteration=%d mean_dice=%.6f)",
             path,
@@ -1702,6 +2034,23 @@ class CUETrainer:
             if matches:
                 self.best_checkpoint_path = matches[0]
         trainer_state = checkpoint.get("trainer_state", {})
+        sidecar = trainer_state.get("high_selection_sidecar")
+        if sidecar is not None and self.high_selection_mode != "none":
+            sidecar_name = str(sidecar.get("file", ""))
+            if not sidecar_name or Path(sidecar_name).name != sidecar_name:
+                raise ValueError("Invalid High Selection checkpoint sidecar path")
+            sidecar_path = Path(path).expanduser().resolve().parent / sidecar_name
+            if not sidecar_path.is_file():
+                raise FileNotFoundError(f"High Selection checkpoint sidecar is missing: {sidecar_path}")
+            if _file_sha256(sidecar_path) != sidecar.get("sha256"):
+                raise ValueError("High Selection checkpoint sidecar checksum mismatch")
+            state = torch.load(sidecar_path, map_location="cpu", weights_only=False)
+            if (
+                int(state.get("cache_version", -1)) != int(sidecar.get("cache_version", -2))
+                or state.get("checkpoint_student_fingerprint") != sidecar.get("checkpoint_student_fingerprint")
+            ):
+                raise ValueError("High Selection sidecar binding metadata mismatch")
+            trainer_state["high_selection_state"] = state
         if self.amp_enabled and checkpoint.get("scaler_state"):
             self.scaler.load_state_dict(checkpoint["scaler_state"])
         self.patience_counter = int(trainer_state.get("patience_counter", 0))
@@ -1721,9 +2070,9 @@ class CUETrainer:
             cuda_states = rng_state.get("torch_cuda", [])
             if torch.cuda.is_available() and cuda_states:
                 torch.cuda.set_rng_state_all(cuda_states)
-            trainer_state = rng_state.get("trainer_generator")
-            if trainer_state is not None:
-                self.generator.set_state(trainer_state)
+            generator_state = rng_state.get("trainer_generator")
+            if generator_state is not None:
+                self.generator.set_state(generator_state)
             view_state = rng_state.get("view_generator")
             if view_state is not None:
                 self.views.generator.set_state(view_state)
@@ -1734,4 +2083,72 @@ class CUETrainer:
             self.logger.warning(
                 "Checkpoint has no RNG state; stochastic continuation is not exact"
             )
+        self._restore_high_selection_state(trainer_state)
         self.logger.info("Resumed from %s at iteration %d", path, self.start_iteration)
+
+    def _high_selection_config_fingerprint(self) -> str:
+        routing_path = self.config["method"].get("routing_assignments_csv")
+        routing_fingerprint = None
+        if routing_path:
+            path = Path(routing_path).expanduser()
+            routing_fingerprint = {
+                "path": str(path.resolve()),
+                "sha256": _file_sha256(path) if path.is_file() else None,
+            }
+        payload = {
+            "mode": self.high_selection_mode,
+            "high_selection": self.high_selection_config,
+            "training_cases": sorted(case.name for case in self.train_cases),
+            "routing": routing_fingerprint,
+            "routing_mode": self.config["method"].get("routing_mode"),
+            "patch_size": self.patch_size,
+            "tile_step_size": self.tile_step_size,
+            "prompt": self.config["model"].get("prompt"),
+            "high_loss": {
+                key: self.config["train"].get(key)
+                for key in ("high_bce_weight", "high_dice_weight", "high_foreground_weight", "balance_high_bce")
+            },
+            "learning_rate": self.config["train"].get("learning_rate"),
+            "parameter_shapes": [tuple(parameter.shape) for parameter in self.runtime.trainable_parameters],
+        }
+        return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+
+    def _restore_high_selection_state(self, trainer_state: dict) -> None:
+        if self.high_selection_mode == "none":
+            return
+        state = trainer_state.get("high_selection_state")
+        if state is None:
+            self.high_reference_bank = ReferenceBank()
+            self.high_selection_cache_iteration = None
+            self.logger.warning("Checkpoint has no High Selection state; cache invalidated and will rebuild before the next CSS decision")
+            return
+        if int(state.get("schema_version", -1)) != 1:
+            raise ValueError("Unsupported High Selection checkpoint state version")
+        if state.get("mode") != self.high_selection_mode:
+            raise ValueError("Checkpoint High Selection mode does not match config")
+        if state.get("config_fingerprint") != self._high_selection_config_fingerprint():
+            raise ValueError("Checkpoint High Selection config/routing is incompatible")
+        if state.get("checkpoint_student_fingerprint") != self._lora_fingerprint():
+            raise ValueError("High Selection sidecar is bound to different Student parameters")
+        self.high_reference_bank.load_state_dict(state["reference_bank"])
+        if self.high_reference_bank.cache_version != int(state.get("cache_version", -1)):
+            raise ValueError("High Selection cache version metadata mismatch")
+        if self.high_reference_bank.model_fingerprint != state.get("cache_model_fingerprint"):
+            raise ValueError("High Selection cache snapshot fingerprint mismatch")
+        if self.high_reference_bank.generated_iteration != state.get("cache_iteration"):
+            raise ValueError("High Selection cache generation iteration mismatch")
+        cache_iteration = state.get("cache_iteration")
+        if cache_iteration is not None and int(cache_iteration) > self.start_iteration:
+            raise ValueError("High Selection cache was generated after checkpoint iteration")
+        self.high_selection_cache_iteration = None if cache_iteration is None else int(cache_iteration)
+        self.high_selection_rng.setstate(state["rng_state"])
+        self.high_selection_attempts = int(state.get("attempts", 0))
+        self.high_selection_accepts = int(state.get("accepts", 0))
+        self.high_selection_rejects = int(state.get("rejects", 0))
+        self.optimizer_step_count = int(state.get("optimizer_step_count", 0))
+
+    def _lora_fingerprint(self) -> str:
+        digest = hashlib.sha256()
+        for parameter in self.runtime.trainable_parameters:
+            digest.update(parameter.detach().cpu().contiguous().numpy().tobytes())
+        return digest.hexdigest()

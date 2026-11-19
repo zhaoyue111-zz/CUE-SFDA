@@ -91,6 +91,24 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError("consensus.lambda_consensus cannot be negative")
     if float(consensus.get("lambda_language", 0.01)) < 0:
         raise ValueError("consensus.lambda_language cannot be negative")
+    high_selection = config.get("high_selection", {})
+    high_selection_mode = str(high_selection.get("mode", "none"))
+    if high_selection_mode not in {"none", "semantic_subspace"}:
+        raise ValueError("high_selection.mode must be none or semantic_subspace in this repository")
+    if high_selection_mode == "semantic_subspace":
+        if not config.get("method", {}).get("routing_assignments_csv"):
+            raise ValueError("CSS requires a frozen method.routing_assignments_csv")
+        if int(high_selection.get("reference_count", 8)) < 4:
+            raise ValueError("CSS requires at least four reference cases")
+        if int(high_selection.get("reference_refresh_interval", 100)) < 1:
+            raise ValueError("high_selection.reference_refresh_interval must be positive")
+        energy = float(high_selection.get("spectral_energy", 0.9))
+        if not 0.0 < energy <= 1.0:
+            raise ValueError("high_selection.spectral_energy must be in (0, 1]")
+        if int(high_selection.get("tokens_per_case", 256)) < 1:
+            raise ValueError("high_selection.tokens_per_case must be positive")
+        if float(high_selection.get("robust_mad_multiplier", 3.0)) < 0.0:
+            raise ValueError("high_selection.robust_mad_multiplier cannot be negative")
     patience = int(config["train"].get("early_stopping_patience", 10))
     if patience < 0:
         raise ValueError("train.early_stopping_patience cannot be negative")
