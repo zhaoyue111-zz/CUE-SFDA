@@ -4,6 +4,17 @@
 
 This is an offline exploratory sweep using only the existing `per_case_scores.csv`; there was no inference, model training, parameter update, or adaptation. The 101 cases and their GT Dice values come from the current benchmark. Therefore, alpha selection and all comparisons are exploratory and use training-set GT; they are not an unbiased held-out evaluation. This sweep does not resolve the upstream historical baseline discrepancy: the prior audit records a mean absolute Dice difference of about `6e-4`, which remained unexplained after checking with the repository's original `VoxTellPredictor`. Treat these results as conditional comparisons within the current score table, not as a validated reproduction of the historical experiment.
 
+Low-Dice detection uses uncertainty (`−confidence`) as the positive-class score; Dice>0.5 detection uses confidence. Gated empty predictions receive confidence 0 and sort after every nonempty case even if nonempty scores are tied or nonpositive. Nonempty-case ranks, Top-K means, High/Low groups, and zero-Dice error counts are recalculated within the 81-case nonempty subset. Original CUE-DIC now has its own all-case/nonempty ranks and Top-59 flags.
+
+## Provisional candidates for later validation
+
+| Role | Candidate |
+|---|---|
+| Main | Pairwise Hard Dice, Image 0.4 / Prompt 0.6 (α=0.6) |
+| Lightweight | Pairwise Hard Dice, Prompt-only (α=1.0) |
+| Control | Pairwise Soft Dice, Image 0.5 / Prompt 0.5 |
+| Baseline | Original E |
+
 For each metric, fusion was performed on the uncertainty values, `U_joint=(1−α)U_image+αU_prompt`, for α=0.0…1.0 by 0.1. Confidence was then recomputed using the existing metric transform: `1−U_joint` for I1/I2 and `1/(1+U_joint)` for I3 VVC. Gated results set confidence to 0 for empty predictions; raw results retain the raw confidence. There are 101 total cases, 81 nonempty predictions, 20 empty predictions, and 22 zero-Dice nonempty predictions. High is the top 59 by confidence, Low the remaining 42; ties are broken by case ID. Dice bands are `<0.1`, `[0.1,0.5]`, and `>0.5`.
 
 ## Consistency checks and controls
@@ -21,7 +32,7 @@ At α=0, 0.5, and 1.0, scores reproduce the existing Image-only, Image+Prompt, a
 | I3_VVC | raw | 0.7 | 0.5127 | 0.6333 | 0.5227 |
 | I3_VVC | gated | 0.9 | 0.3906 | 0.8514 | 0.5615 |
 
-Full and nonempty Spearman, Pearson, AURC, AUROC/AUPRC, all requested Top-K means, and High/Low Dice are in `fusion_summary.csv`. The three Dice-band counts and within-group proportions are in `high_low_dice_bins.csv`. Confidence, cohort rank, Top-59 membership, and the 22 zero-Dice nonempty cases are in `per_case_scores.csv` and `zero_dice_nonempty_cases.csv`.
+Full and nonempty Spearman, Pearson, AURC, AUROC/AUPRC, all requested Top-K means, and independently calculated High/Low Dice are in `fusion_summary.csv`. The three Dice-band counts and within-group proportions for all-case and nonempty High/Low sets are in `high_low_dice_bins.csv`. Confidence, all/nonempty cohort ranks, both Top-59 flags, and the 22 zero-Dice nonempty cases are in `per_case_scores.csv` and `zero_dice_nonempty_cases.csv`. Original CUE-DIC all-case/nonempty ranks and Top-59 membership are included in the same per-case table.
 
 ## Paired bootstrap comparisons
 

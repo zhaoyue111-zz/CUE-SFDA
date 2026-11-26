@@ -1,0 +1,42 @@
+{
+  "devices": [
+    0,
+    1
+  ],
+  "worker_status": [
+    [
+      0,
+      0
+    ],
+    [
+      1,
+      0
+    ]
+  ],
+  "workers": [
+    {
+      "worker_rank": 0,
+      "world": 2,
+      "device": 0,
+      "cases": 51,
+      "display_range": [
+        1.0,
+        212.0
+      ],
+      "peak_cuda_memory_bytes": 2091757568
+    },
+    {
+      "worker_rank": 1,
+      "world": 2,
+      "device": 1,
+      "cases": 50,
+      "display_range": [
+        1.0,
+        212.0
+      ],
+      "peak_cuda_memory_bytes": 1952855040
+    }
+  ],
+  "model_loaded": false,
+  "inference_performed": false
+}
