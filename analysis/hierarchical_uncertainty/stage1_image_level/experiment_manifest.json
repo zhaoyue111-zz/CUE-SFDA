@@ -1,0 +1,61 @@
+{
+  "branch": "image-level-uncertainty-benchmark",
+  "config": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/configs/response_routing_liver_cancer_E.yaml",
+  "seed": 42,
+  "devices": [
+    0,
+    1
+  ],
+  "image_view_count": 10,
+  "prompts": [
+    "liver cancer",
+    "liver tumor",
+    "HCC",
+    "hepatocellular carcinoma"
+  ],
+  "standard_prompt": "liver cancer",
+  "gt_role": "offline_evaluation_only",
+  "existing_multiview_probability_cache": "none found; inference required",
+  "historical_E": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/outputs/response_routing/E_joint_empty_to_low/routing_summary.json",
+  "inference_protocol": "E image perturbation generator, 10 mixed photometric views; four prompt perturbations are separate forwards; original standard prompt is a separate forward",
+  "text_encoder_dtype": "float16",
+  "standard_prompt_embedding_cache_source": "outputs/response_routing/E_joint_empty_to_low/prompt_cache/liver_cancer_aef3cc625786e0ac.pt",
+  "benchmark_prompt_cache": "analysis/hierarchical_uncertainty/stage1_image_level/prompt_cache_fp16",
+  "view_membership": {
+    "original_in_image_views": false,
+    "standard_prompt_in_prompt_views": true,
+    "original_separate_from_prompt_views": true
+  },
+  "inference_runs": 2,
+  "final_probability_cache_protocol": "single standard-prompt original; 10 image views; 4 separate prompt views",
+  "gt_dir": "/data/hilab/datasets/WCH_MRI145/DWI/labels",
+  "reference_dir": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA",
+  "model_checkpoint": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+  "original_prompt_strategy": "standard prompt only, single prompt forward",
+  "probability_threshold": 0.5,
+  "gaussian_fusion": {
+    "sigma_scale": 0.125,
+    "value_scaling_factor": 10,
+    "logit_fusion": true,
+    "tile_step_size": 0.5
+  },
+  "uncertainty_map_epsilon": 1e-08,
+  "epkl_probability_epsilon": 1e-06,
+  "confidence_transforms": {
+    "I0_CUE_DIC": "1-U",
+    "I1_Pairwise_Hard": "1-U",
+    "I2_Pairwise_Soft": "1-U",
+    "I3_VVC": "1/(1+U)",
+    "I4_MPC": "1-2U",
+    "I5_Entropy": "1-U",
+    "I6_PE": "1-U",
+    "I7_EE": "1-U",
+    "I8_PV": "1-4U",
+    "I9_MI": "1-U",
+    "I10_EPKL": "1/(1+U)",
+    "I11_VD": "1-2U",
+    "I12_Chebyshev": "1-U",
+    "I13_IPD": "1/(1+U)"
+  },
+  "probability_storage": "float32 compressed npz, ROI coordinates and spacing in per-case metadata"
+}

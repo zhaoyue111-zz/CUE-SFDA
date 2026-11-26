@@ -1,0 +1,32 @@
+{
+  "iterations_completed": 500,
+  "branch_sample_counts": {
+    "high": 384,
+    "low": 116
+  },
+  "branch_patch_counts": {
+    "high": 1847,
+    "low": 472
+  },
+  "branch_effective_supervision_patches": {
+    "high": 1839,
+    "low": 472
+  },
+  "branch_ineffective_patches": {
+    "high": 8,
+    "low": 0
+  },
+  "dynamic_hard_loss_mean": 0.06541349215155405,
+  "dynamic_hard_loss_patches": 472,
+  "css_high_attempts": 384,
+  "css_high_accepts": 322,
+  "css_high_rejects": 62,
+  "css_high_acceptance_rate": 0.8385416666666666,
+  "liver_loss_means": {
+    "volume_constraint_loss": 0.13036005748239177,
+    "student_teacher_volume_ratio": 1.3574715743574906,
+    "high_bce_loss": 0.32986215401983415,
+    "high_dice_loss": 0.49337712651533117,
+    "volume_constraint_updates": 1.0
+  }
+}

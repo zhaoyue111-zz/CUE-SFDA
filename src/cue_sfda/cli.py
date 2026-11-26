@@ -84,7 +84,12 @@ def main() -> None:
     logger.info(
         "Loaded target split: train=%d test=%d", len(train_cases), len(test_cases)
     )
-    runtime = build_runtime(config, output_dir / "prompt_cache")
+    prompt_cache_dir = Path(
+        config.get("liver_adaptation", {}).get(
+            "prompt_cache_dir", output_dir / "prompt_cache"
+        )
+    )
+    runtime = build_runtime(config, prompt_cache_dir)
     trainable = sum(parameter.numel() for parameter in runtime.trainable_parameters)
     total = sum(parameter.numel() for parameter in runtime.model.parameters())
     logger.info(

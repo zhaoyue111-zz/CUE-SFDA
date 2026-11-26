@@ -1,0 +1,18 @@
+case_id,stage,reason,historical_dice,current_dice,absolute_difference,action
+0019971803,baseline_reproducibility,user authorized proceeding with this baseline deviation; case included and retained,0.125,0.14871794871794872,0.023717948717948717,included in formal benchmark and reported
+0008877866,baseline_reproducibility,user authorized proceeding with this baseline deviation; case included and retained,0.8007590132827325,0.8104993597951344,0.009740346512401965,included in formal benchmark and reported
+0011295982,baseline_reproducibility,user authorized proceeding with this baseline deviation; case included and retained,0.2304857621440536,0.23890557223890557,0.00841981009485196,included in formal benchmark and reported
+0006317240,baseline_reproducibility,user authorized proceeding with this baseline deviation; case included and retained,0.05965566399824542,0.06701201366692384,0.007356349668678423,included in formal benchmark and reported
+0018411622,baseline_reproducibility,user authorized proceeding with this baseline deviation; case included and retained,0.6637554585152838,0.6705202312138728,0.0067647726985889944,included in formal benchmark and reported
+0013482554,baseline_reproducibility,user authorized proceeding with this baseline deviation; case included and retained,0.6982248520710059,0.7044976881042455,0.006272836033239582,included in formal benchmark and reported
+0015953398,baseline_reproducibility,user authorized proceeding with this baseline deviation; case included and retained,0.17784256559766765,0.18313953488372092,0.005296969286053277,included in formal benchmark and reported
+0000801631,baseline_reproducibility,user authorized proceeding with this baseline deviation; case included and retained,0.635091496232508,0.640171858216971,0.005080361984462933,included in formal benchmark and reported
+0017351674,baseline_reproducibility,user authorized proceeding with this baseline deviation; case included and retained,0.01020408163265306,0.00517464424320828,0.0050294373894447806,included in formal benchmark and reported
+0017554294,baseline_reproducibility,user authorized proceeding with this baseline deviation; case included and retained,0.33488372093023255,0.3311432325886991,0.0037404883415334544,included in formal benchmark and reported
+0009011272,empty_prediction_count,current E-protocol original prediction is empty but historical E routing records response-present,0.0,0.0,0.0,retained in full cohort; see subgroup and gated results
+0018689853,empty_prediction_count,current E-protocol original prediction is empty but historical E routing records response-present,0.0,0.0,0.0,retained in full cohort; see subgroup and gated results
+0019218185,empty_prediction_count,current E-protocol original prediction is empty but historical E routing records response-present,0.0,0.0,0.0,retained in full cohort; see subgroup and gated results
+0001679853,G1_union_empty,"Multi-view union mask is empty; raw uncertainty is undefined (NaN), 0 valid voxels.",,,,retain NaN; do not impute confidence
+0017452826,G1_union_empty,"Multi-view union mask is empty; raw uncertainty is undefined (NaN), 0 valid voxels.",,,,retain NaN; do not impute confidence
+0019873347,G1_union_empty,"Multi-view union mask is empty; raw uncertainty is undefined (NaN), 0 valid voxels.",,,,retain NaN; do not impute confidence
+0032229283,G1_union_empty,"Multi-view union mask is empty; raw uncertainty is undefined (NaN), 0 valid voxels.",,,,retain NaN; do not impute confidence

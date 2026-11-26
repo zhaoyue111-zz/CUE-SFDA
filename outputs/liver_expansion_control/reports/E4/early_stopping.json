@@ -1,0 +1,9 @@
+{
+  "best_dice": 0.7400816769678936,
+  "best_iteration": 0,
+  "best_checkpoint": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/outputs/liver_expansion_control/runs/E4/checkpoints/best_iteration_000000_dice_0.740082.pt",
+  "patience_counter": 10,
+  "early_stopping_patience": 10,
+  "stop_iteration": 500,
+  "stop_reason": "early_stopping_patience"
+}

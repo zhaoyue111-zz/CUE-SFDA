@@ -18,6 +18,8 @@ from nnunetv2.preprocessing.normalization.default_normalization_schemes import (
     ZScoreNormalization,
 )
 from cue_sfda.data import CaseRecord
+from cue_sfda.data import TargetVolumeStore
+from cue_sfda.method.source_volume import SourceVolumeCache
 from cue_sfda.modeling.voxtell import VoxTellRuntime
 
 
@@ -41,6 +43,19 @@ def evaluate(
         output_root.mkdir(parents=True, exist_ok=True)
     reader = NibabelIOWithReorient()
     normalizer = ZScoreNormalization(intensityproperties={})
+    liver_config = config.get("liver_adaptation", {})
+    source_cache = None
+    source_store = None
+    source_tile_step = float(config["train"].get("tile_step_size", 0.5))
+    if liver_config:
+        source_cache = SourceVolumeCache(
+            liver_config["teacher_cache_dir"],
+            str(config["model"]["prompt"]),
+            config["model"],
+        )
+        source_store = TargetVolumeStore(
+            tuple(int(value) for value in config["data"]["patch_size"])
+        )
     rows = []
     runtime.model.eval()
     for index, case in enumerate(cases, start=1):
@@ -49,6 +64,23 @@ def evaluate(
             raise FileNotFoundError(f"Missing GT file: {gt_file}")
         image, properties = reader.read_images([str(case.image_path)])
         label, _ = reader.read_seg(str(gt_file))
+        source_prediction = None
+        if source_cache is not None and source_store is not None:
+            source_volume, source_slicers, source_geometry = (
+                source_store.sliding_window_with_geometry(case, source_tile_step)
+            )
+            source_prediction = source_cache.get_or_build(
+                case,
+                source_volume,
+                source_slicers,
+                source_geometry,
+                source_store,
+                runtime,
+                runtime.embedding,
+                config["model"],
+                source_tile_step,
+                logger,
+            )
         probability = predict_volume(runtime, image, normalizer, config)
         threshold = float(config["evaluation"]["threshold"])
         prediction = probability >= threshold
@@ -62,14 +94,27 @@ def evaluate(
                 str(prediction_path),
                 properties,
             )
-        rows.append(
-            {
-                "case": case.name,
-                **metrics,
-                "predicted_voxels": int(prediction.sum()),
-                "ground_truth_voxels": int(ground_truth.sum()),
-            }
-        )
+        row = {
+            "case": case.name,
+            **metrics,
+            "predicted_voxels": int(prediction.sum()),
+            "ground_truth_voxels": int(ground_truth.sum()),
+        }
+        if source_prediction is not None:
+            teacher_volume = source_prediction.soft_volume
+            student_soft_volume = float(probability.astype(np.float64).sum())
+            row.update(
+                teacher_predicted_voxels=source_prediction.foreground_voxels,
+                teacher_soft_volume=teacher_volume,
+                student_soft_volume=student_soft_volume,
+                student_teacher_soft_volume_ratio=(
+                    student_soft_volume / max(teacher_volume, 1e-6)
+                ),
+                predicted_ground_truth_volume_ratio=(
+                    int(prediction.sum()) / max(int(ground_truth.sum()), 1)
+                ),
+            )
+        rows.append(row)
         logger.info(
             "evaluation=%d/%d case=%s dice=%.6f iou=%.6f",
             index,
@@ -90,6 +135,25 @@ def evaluate(
         "mean_recall": float(np.mean([row["recall"] for row in rows])),
         "num_cases": len(rows),
     }
+    if source_cache is not None:
+        summary.update(
+            mean_student_teacher_soft_volume_ratio=(
+                float(sum(row["student_soft_volume"] for row in rows))
+                / max(float(sum(row["teacher_soft_volume"] for row in rows)), 1e-6)
+            ),
+            mean_predicted_ground_truth_volume_ratio=float(
+                np.mean([row["predicted_ground_truth_volume_ratio"] for row in rows])
+            ),
+            mean_teacher_predicted_voxels=float(
+                np.mean([row["teacher_predicted_voxels"] for row in rows])
+            ),
+            mean_student_soft_volume=float(
+                np.mean([row["student_soft_volume"] for row in rows])
+            ),
+            mean_teacher_soft_volume=float(
+                np.mean([row["teacher_soft_volume"] for row in rows])
+            ),
+        )
     summary_path = output_root / "metrics_summary.csv"
     with summary_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(summary))

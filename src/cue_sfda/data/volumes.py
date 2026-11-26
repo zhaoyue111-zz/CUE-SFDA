@@ -65,20 +65,23 @@ class TargetVolumeStore:
         self.reader = NibabelIOWithReorient()
         self.normalizer = ZScoreNormalization(intensityproperties={})
         self.cache: OrderedDict[str, torch.Tensor] = OrderedDict()
+        self.properties: OrderedDict[str, dict] = OrderedDict()
 
     def load(self, case: CaseRecord) -> torch.Tensor:
         cached = self.cache.pop(case.name, None)
         if cached is not None:
             self.cache[case.name] = cached
             return cached
-        image, _ = self.reader.read_images([str(case.image_path)])
+        image, properties = self.reader.read_images([str(case.image_path)])
         image = image.astype(np.float32, copy=False)
         image, _, _ = crop_to_nonzero(image, None)
         image = self.normalizer.run(image, None)
         tensor = torch.from_numpy(np.ascontiguousarray(image)).float()
         self.cache[case.name] = tensor
+        self.properties[case.name] = dict(properties)
         while len(self.cache) > self.cache_size:
-            self.cache.popitem(last=False)
+            evicted, _ = self.cache.popitem(last=False)
+            self.properties.pop(evicted, None)
         return tensor
 
     def sliding_window(
@@ -94,6 +97,50 @@ class TargetVolumeStore:
             True,
             None,
         )
+        return volume, self._make_slicers(volume, step_size)
+
+    def sliding_window_with_geometry(
+        self,
+        case: CaseRecord,
+        step_size: float,
+    ) -> tuple[
+        torch.Tensor,
+        list[tuple[slice, slice, slice]],
+        dict[str, object],
+    ]:
+        unpadded = self.load(case)
+        volume, revert_slicer = pad_nd_image(
+            unpadded,
+            self.patch_size,
+            "constant",
+            {"value": 0},
+            True,
+            None,
+        )
+        slicers = self._make_slicers(volume, step_size)
+        properties = self.properties.get(case.name, {})
+        spacing = tuple(float(value) for value in properties.get("spacing", ()))
+        if len(spacing) != 3 or any(not np.isfinite(value) or value <= 0 for value in spacing):
+            raise ValueError(
+                f"Invalid physical spacing for {case.name}: {properties.get('spacing')}"
+            )
+        roi_slicer = tuple(
+            slice(int(item.start or 0), int(item.stop or size))
+            for item, size in zip(revert_slicer[1:], unpadded.shape[-3:], strict=True)
+        )
+        geometry: dict[str, object] = {
+            "roi_shape": tuple(int(value) for value in unpadded.shape[-3:]),
+            "padded_shape": tuple(int(value) for value in volume.shape[-3:]),
+            "roi_slicer": roi_slicer,
+            "spacing": spacing,
+        }
+        return volume, slicers, geometry
+
+    def _make_slicers(
+        self,
+        volume: torch.Tensor,
+        step_size: float,
+    ) -> list[tuple[slice, slice, slice]]:
         spatial_shape = tuple(int(value) for value in volume.shape[-3:])
         steps = compute_steps_for_sliding_window(
             spatial_shape,
@@ -111,7 +158,7 @@ class TargetVolumeStore:
                             slice(start_w, start_w + self.patch_size[2]),
                         )
                     )
-        return volume, slicers
+        return slicers
 
     @staticmethod
     def extract_patch(

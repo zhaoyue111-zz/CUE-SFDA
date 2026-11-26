@@ -1,0 +1,2 @@
+mean_dice,mean_iou,mean_precision,mean_recall,num_cases,mean_student_teacher_soft_volume_ratio,mean_predicted_ground_truth_volume_ratio,mean_teacher_predicted_voxels,mean_student_soft_volume,mean_teacher_soft_volume
+0.7407129325297407,0.6094558959033812,0.7104622330415815,0.8261554800840404,44,1.4374605765424606,1.3697109438822996,83261.65909090909,121427.26879306631,84473.46019404348

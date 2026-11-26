@@ -1,0 +1,34 @@
+{
+  "mode": "semantic_subspace",
+  "reference_case_ids": [
+    "0000801631.nii.gz",
+    "0007994390.nii.gz",
+    "0008006851.nii.gz",
+    "0011295982.nii.gz",
+    "0014186880.nii.gz",
+    "0020946113.nii.gz",
+    "0032229283.nii.gz",
+    "0032961497.nii.gz"
+  ],
+  "generated_iteration": 1308,
+  "source_checkpoint": {
+    "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+    "exists": true,
+    "size": 1774589029,
+    "mtime_ns": 1778555868000000000
+  },
+  "adapted_student_lora_sha256": "e85b6bceee79837b9f119581bf0f3cb5510d1d2ac307ef26aa4d3a9e3ad8fa3f",
+  "cache_refresh_interval": 100,
+  "cache_version": 14,
+  "semantic_cache_error": null,
+  "stale_reference_policy": "snapshot references are approximate until the next configured refresh",
+  "config": {
+    "mode": "semantic_subspace",
+    "reference_count": 8,
+    "reference_refresh_interval": 100,
+    "significance_level": 0.05,
+    "spectral_energy": 0.9,
+    "robust_mad_multiplier": 3.0,
+    "tokens_per_case": 256
+  }
+}

@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from nnunetv2.inference.sliding_window_prediction import compute_gaussian
 
 from cue_sfda.data import CaseRecord, TargetVolumeStore
 from cue_sfda.engine.checkpoint import load_checkpoint, save_checkpoint
@@ -43,7 +44,16 @@ from cue_sfda.method.losses import (
     masked_binary_cross_entropy,
     masked_soft_dice_loss,
 )
+from cue_sfda.method.liver_adaptation import (
+    build_liver_region_masks,
+    fused_volume_constraint_gradient,
+    patch_vjp_coefficient,
+    partitioned_teacher_loss,
+    remote_background_loss,
+    teacher_anchor_loss,
+)
 from cue_sfda.method.refinement import affinity_random_walk
+from cue_sfda.method.source_volume import SourceVolumeCache, SourceVolumePrediction
 from cue_sfda.method.routing import build_routing_assignments, write_routing_csv
 from cue_sfda.method.uncertainty import (
     ChebyshevEstimate,
@@ -85,6 +95,24 @@ class CUETrainer:
         self.logger = logger
         self.validation_cases = validation_cases or []
         self.validation_gt_path = validation_gt_path
+        self.liver_config = dict(config.get("liver_adaptation", {}))
+        self.liver_experiment = str(self.liver_config.get("experiment", "baseline"))
+        self.prompt_cache_dir = Path(
+            self.liver_config.get("prompt_cache_dir", self.output_dir / "prompt_cache")
+        )
+        self.source_volume_cache = (
+            SourceVolumeCache(
+                self.liver_config["teacher_cache_dir"],
+                str(config["model"]["prompt"]),
+                config["model"],
+            )
+            if self.liver_config
+            else None
+        )
+        self.liver_loss_totals: dict[str, float] = {}
+        self.liver_loss_counts: dict[str, int] = {}
+        self.liver_context_case_name: str | None = None
+        self.liver_context_memory: dict | None = None
         data_config = config["data"]
         method_config = config["method"]
         train_config = config["train"]
@@ -155,17 +183,13 @@ class CUETrainer:
             self.dynamic_hard_cache = DynamicHardCache(
                 self.dynamic_hard_config["cache_dir"]
             )
-            standard_prompt = str(
-                self.dynamic_hard_config["standard_prompt"]
-            )
-            self.dynamic_prompt_embeddings[standard_prompt] = self.embedding
             for prompt in self.dynamic_hard_config["prompts"]:
                 prompt = str(prompt)
                 if prompt not in self.dynamic_prompt_embeddings:
                     self.dynamic_prompt_embeddings[prompt] = load_prompt_embedding(
                         config,
                         prompt,
-                        self.output_dir / "prompt_cache",
+                        self.prompt_cache_dir,
                         self.device,
                     )
 
@@ -349,6 +373,21 @@ class CUETrainer:
                         metrics["refined_foreground_fraction"],
                         self.partition.threshold,
                     )
+            if self.liver_config and iteration % 50 == 0:
+                self.logger.info(
+                    "liver_loss_components iteration=%d experiment=%s high_bce=%.6f "
+                    "high_dice=%.6f volume=%.6f volume_ratio=%.5f remote_background=%.6f "
+                    "regions=%.6f anchor=%.6f",
+                    iteration,
+                    self.liver_experiment,
+                    metrics.get("high_bce_loss", 0.0),
+                    metrics.get("high_dice_loss", 0.0),
+                    metrics.get("volume_constraint_loss", 0.0),
+                    metrics.get("student_teacher_volume_ratio", float("nan")),
+                    metrics.get("remote_background_loss", 0.0),
+                    metrics.get("region_loss", 0.0),
+                    metrics.get("anchor_loss", 0.0),
+                )
             if (
                 not self.dynamic_hard_enabled
                 and iteration % save_every == 0
@@ -681,6 +720,16 @@ class CUETrainer:
                     / max(self.dynamic_hard_loss_patches, 1)
                 ),
                 "dynamic_hard_loss_patches": self.dynamic_hard_loss_patches,
+                "css_high_attempts": self.high_selection_attempts,
+                "css_high_accepts": self.high_selection_accepts,
+                "css_high_rejects": self.high_selection_rejects,
+                "css_high_acceptance_rate": (
+                    self.high_selection_accepts / max(self.high_selection_attempts, 1)
+                ),
+                "liver_loss_means": {
+                    name: self.liver_loss_totals[name] / max(self.liver_loss_counts[name], 1)
+                    for name in self.liver_loss_totals
+                },
             },
             self.output_dir / "training_summary.json",
         )
@@ -778,7 +827,7 @@ class CUETrainer:
         return hashlib.sha256(encoded).hexdigest()
 
     def _restore_high_selection_state(self, training_state: dict) -> None:
-        if self.high_selection_mode == "none":
+        if getattr(self, "high_selection_mode", "none") == "none":
             return
         state = training_state.get("high_selection_state")
         if state is None:
@@ -921,10 +970,16 @@ class CUETrainer:
         self, case: CaseRecord, partner: CaseRecord
     ) -> dict[str, float | str | int]:
         high_confidence = self.partition.is_high_confidence(case.name)
-        case_volume, case_slicers = self.store.sliding_window(
-            case,
-            self.tile_step_size,
-        )
+        if hasattr(self.store, "sliding_window_with_geometry"):
+            case_volume, case_slicers, case_geometry = self.store.sliding_window_with_geometry(
+                case,
+                self.tile_step_size,
+            )
+        else:
+            case_volume, case_slicers = self.store.sliding_window(
+                case, self.tile_step_size
+            )
+            case_geometry = {}
         partner_volume, partner_slicers = self.store.sliding_window(
             partner,
             self.tile_step_size,
@@ -938,17 +993,62 @@ class CUETrainer:
         voxel_sum = 0
         effective_patch_count = 0
         skipped_patch_count = 0
+        step_loss_components: dict[str, list[float]] = {}
         patch_count = len(case_slicers)
         selected_high = should_select_high(high_confidence, self.high_selection_mode)
         scale_before = float(self.scaler.get_scale()) if selected_high else 1.0
+        liver_context = None
+        volume_gradient = None
+        volume_normalization = None
+        volume_gaussian = None
+        volume_loss_value = 0.0
+        volume_ratio = float("nan")
+        liver_experiment = getattr(self, "liver_experiment", "baseline")
+        if high_confidence and liver_experiment in {"E1", "E2", "E3", "E4", "E5"}:
+            liver_context = self._liver_teacher_context(
+                case, case_volume, case_slicers, case_geometry
+            )
+        if high_confidence and liver_experiment in {"E1", "E2"}:
+            signal = self._global_volume_constraint_signal(
+                case_volume,
+                case_slicers,
+                case_geometry,
+                liver_context["prediction"],
+            )
+            volume_gradient = signal["gradient"]
+            volume_normalization = signal["normalization"]
+            volume_gaussian = signal["gaussian"]
+            volume_loss_value = signal["loss"]
+            volume_ratio = signal["ratio"]
+            self.liver_loss_totals["volume_constraint_loss"] = (
+                self.liver_loss_totals.get("volume_constraint_loss", 0.0)
+                + volume_loss_value
+            )
+            self.liver_loss_counts["volume_constraint_loss"] = (
+                self.liver_loss_counts.get("volume_constraint_loss", 0) + 1
+            )
+            if np.isfinite(volume_ratio):
+                self.liver_loss_totals["student_teacher_volume_ratio"] = (
+                    self.liver_loss_totals.get("student_teacher_volume_ratio", 0.0)
+                    + volume_ratio
+                )
+                self.liver_loss_counts["student_teacher_volume_ratio"] = (
+                    self.liver_loss_counts.get("student_teacher_volume_ratio", 0) + 1
+                )
+        volume_effective = volume_gradient is not None and volume_loss_value > 0.0
         for patch_index, case_slicer in enumerate(case_slicers):
             partner_slicer = partner_slicers[patch_index % len(partner_slicers)]
             image = self._patch(case_volume, case_slicer)
             partner_image = self._patch(partner_volume, partner_slicer)
             if high_confidence:
-                loss, patch_metrics = self._high_confidence_loss(
-                    image, case, case_slicer
-                )
+                if getattr(self, "liver_config", None) or str(
+                    self.config.get("method", {}).get("high_pseudo_target", "source")
+                ) == "prompt_consensus":
+                    loss, patch_metrics = self._high_confidence_loss(
+                        image, case, case_slicer, liver_context
+                    )
+                else:
+                    loss, patch_metrics = self._high_confidence_loss(image)
                 branch = "high"
             elif self.dynamic_hard_enabled:
                 loss, patch_metrics = self._low_confidence_loss(
@@ -976,6 +1076,64 @@ class CUETrainer:
                 effective_patch_count += 1
             else:
                 skipped_patch_count += 1
+            for component in (
+                "high_bce_loss",
+                "high_dice_loss",
+                "remote_background_loss",
+                "region_loss",
+                "anchor_loss",
+            ):
+                if component in patch_metrics:
+                    loss_value = float(patch_metrics[component])
+                    step_loss_components.setdefault(component, []).append(loss_value)
+                    self.liver_loss_totals[component] = (
+                        self.liver_loss_totals.get(component, 0.0) + loss_value
+                    )
+                    self.liver_loss_counts[component] = (
+                        self.liver_loss_counts.get(component, 0) + 1
+                    )
+        if (
+            volume_gradient is not None
+            and volume_normalization is not None
+            and volume_gaussian is not None
+            and volume_loss_value > 0.0
+        ):
+            was_training = self.model.training
+            self.model.train()
+            rng_after_base_cpu = torch.get_rng_state()
+            rng_after_base_cuda = (
+                torch.cuda.get_rng_state(self.device)
+                if self.device.type == "cuda"
+                else None
+            )
+            for case_slicer, rng_state in zip(
+                case_slicers, signal["rng_states"], strict=True
+            ):
+                torch.set_rng_state(rng_state[0])
+                if self.device.type == "cuda":
+                    torch.cuda.set_rng_state(rng_state[1], self.device)
+                image = self._patch(case_volume, case_slicer)
+                with self._autocast():
+                    student_logits = self.model(image, self.embedding)
+                coefficient = patch_vjp_coefficient(
+                    volume_gradient,
+                    volume_normalization,
+                    volume_gaussian,
+                    case_slicer,
+                )
+                surrogate = (student_logits[0, 0].float() * coefficient).sum()
+                self.scaler.scale(surrogate).backward()
+            torch.set_rng_state(rng_after_base_cpu)
+            if self.device.type == "cuda" and rng_after_base_cuda is not None:
+                torch.cuda.set_rng_state(rng_after_base_cuda, self.device)
+            self.model.train(was_training)
+            self.liver_loss_totals["volume_constraint_updates"] = (
+                self.liver_loss_totals.get("volume_constraint_updates", 0.0) + 1.0
+            )
+            self.liver_loss_counts["volume_constraint_updates"] = (
+                self.liver_loss_counts.get("volume_constraint_updates", 0) + 1
+            )
+        del volume_gradient, volume_normalization, volume_gaussian
         self.scaler.unscale_(self.optimizer)
         gradient_denominator = max(effective_patch_count, 1)
         for parameter in self.runtime.trainable_parameters:
@@ -1009,7 +1167,7 @@ class CUETrainer:
                 self.optimizer,
                 self.runtime.trainable_parameters,
                 accepted=bool(selection["accepted"]),
-                effective=effective_patch_count > 0,
+                effective=effective_patch_count > 0 or volume_effective,
                 overflow=high_overflow,
                 max_norm=max_norm,
                 scale_before=scale_before,
@@ -1018,7 +1176,7 @@ class CUETrainer:
         else:
             # Historical mode=none and Low AMP path: keep the original sequence.
             torch.nn.utils.clip_grad_norm_(self.runtime.trainable_parameters, max_norm)
-            if effective_patch_count > 0:
+            if effective_patch_count > 0 or volume_effective:
                 will_skip = scaler_will_skip_step(self.scaler, self.optimizer)
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
@@ -1050,7 +1208,11 @@ class CUETrainer:
             "refined_foreground_fraction": (
                 refined_foreground_sum / max(voxel_sum, 1)
             ),
+            "volume_constraint_loss": volume_loss_value,
+            "student_teacher_volume_ratio": volume_ratio,
         }
+        for component, values in step_loss_components.items():
+            metrics[component] = float(np.mean(values))
         if self.dynamic_hard_enabled:
             metrics["dynamic_hard_loss"] = dynamic_hard_loss_sum / max(
                 patch_count, 1
@@ -1357,24 +1519,172 @@ class CUETrainer:
             bound_threshold=float(method_config["chebyshev_threshold"]),
         )
 
+    def _liver_teacher_context(
+        self,
+        case: CaseRecord,
+        volume: torch.Tensor,
+        slicers: list[tuple[slice, slice, slice]],
+        geometry: dict[str, object],
+    ) -> dict:
+        if self.source_volume_cache is None:
+            raise RuntimeError("Liver adaptation requires a source-volume cache")
+        if self.liver_context_case_name == case.name and self.liver_context_memory is not None:
+            return self.liver_context_memory
+        prediction = self.source_volume_cache.get_or_build(
+            case,
+            volume,
+            slicers,
+            geometry,
+            self.store,
+            self.runtime,
+            self.embedding,
+            self.config["model"],
+            self.tile_step_size,
+            self.logger,
+        )
+        teacher_probability = prediction.padded_probability(self.device)
+        context: dict = {
+            "valid": prediction.soft_volume >= float(
+                self.liver_config.get("volume_constraint", {}).get(
+                    "minimum_teacher_volume", 1.0
+                )
+            ),
+            "prediction": prediction,
+            "teacher_probability": teacher_probability,
+        }
+        if self.liver_experiment in {"E3", "E4"}:
+            regions_config = self.liver_config.get("regions", {})
+            remote_config = self.liver_config.get("remote_background", {})
+            masks = build_liver_region_masks(
+                prediction.probability,
+                prediction.spacing,
+                foreground_threshold=float(
+                    (regions_config if self.liver_experiment == "E4" else remote_config)
+                    .get("foreground_threshold", 0.5)
+                ),
+                remote_probability_max=float(remote_config.get("probability_max", 0.1)),
+                remote_distance_mm=float(remote_config.get("distance_mm", 15.0)),
+                boundary_width_mm=float(regions_config.get("boundary_width_mm", 5.0)),
+            )
+            context["valid"] = bool(masks["valid"].item())
+            if context["valid"]:
+                context["remote_background"] = prediction.padded_mask(
+                    masks["remote_background"], self.device
+                )
+                if self.liver_experiment == "E4":
+                    context["interior"] = prediction.padded_mask(
+                        masks["interior"], self.device
+                    )
+                    context["boundary"] = prediction.padded_mask(
+                        masks["boundary"], self.device
+                    )
+            else:
+                self.logger.warning(
+                    "Skipping Liver distance regions for Teacher-empty case=%s",
+                    case.name,
+                )
+        self.liver_context_case_name = case.name
+        self.liver_context_memory = context
+        return context
+
+    def _global_volume_constraint_signal(
+        self,
+        volume: torch.Tensor,
+        slicers: list[tuple[slice, slice, slice]],
+        geometry: dict[str, object],
+        teacher_prediction: SourceVolumePrediction,
+    ) -> dict:
+        """Compute a whole-ROI loss and its exact tile-wise VJP coefficients."""
+        shape = tuple(int(value) for value in geometry["padded_shape"])
+        roi_slicer = geometry["roi_slicer"]
+        patch_size = self.patch_size
+        gaussian = compute_gaussian(
+            patch_size,
+            sigma_scale=1.0 / 8.0,
+            value_scaling_factor=10,
+            dtype=torch.float32,
+            device=self.device,
+        )
+        accumulation = torch.zeros(shape, dtype=torch.float32, device=self.device)
+        normalization = torch.zeros_like(accumulation)
+        rng_states: list[tuple[torch.Tensor, torch.Tensor | None]] = []
+        rng_before_cpu = torch.get_rng_state()
+        rng_before_cuda = (
+            torch.cuda.get_rng_state(self.device)
+            if self.device.type == "cuda"
+            else None
+        )
+        was_training = self.model.training
+        self.model.train()
+        try:
+            with torch.no_grad():
+                for slicer in slicers:
+                    image = self._patch(volume, slicer)
+                    cpu_rng = torch.get_rng_state()
+                    cuda_rng = (
+                        torch.cuda.get_rng_state(self.device)
+                        if self.device.type == "cuda"
+                        else None
+                    )
+                    rng_states.append((cpu_rng, cuda_rng))
+                    with self._autocast():
+                        logits = self.model(image, self.embedding)
+                    accumulation[slicer] += logits[0, 0].float() * gaussian
+                    normalization[slicer] += gaussian
+            fused = accumulation / normalization.clamp_min(1e-6)
+        finally:
+            self.model.train(was_training)
+        volume_config = self.liver_config.get("volume_constraint", {})
+        loss_value, gradient, ratio, valid = fused_volume_constraint_gradient(
+            fused,
+            teacher_prediction.probability,
+            roi_slicer,
+            experiment=self.liver_experiment,
+            margin=float(volume_config.get("margin", 0.1)),
+            weight=float(volume_config.get("weight", 1.0)),
+            shrink_weight=float(volume_config.get("shrink_weight", 1.0)),
+            epsilon=float(volume_config.get("epsilon", 1e-6)),
+            minimum_teacher_volume=float(volume_config.get("minimum_teacher_volume", 1.0)),
+        )
+        if gradient is None:
+            torch.set_rng_state(rng_before_cpu)
+            if self.device.type == "cuda" and rng_before_cuda is not None:
+                torch.cuda.set_rng_state(rng_before_cuda, self.device)
+        del fused, accumulation
+        return {
+            "gradient": gradient,
+            "normalization": normalization if gradient is not None else None,
+            "gaussian": gaussian if gradient is not None else None,
+            "rng_states": rng_states,
+            "loss": loss_value,
+            "ratio": ratio,
+        }
+
     def _high_confidence_loss(
         self,
         image: torch.Tensor,
         case: CaseRecord | None = None,
         case_slicer: tuple[slice, slice, slice] | None = None,
+        liver_context: dict | None = None,
     ) -> tuple[torch.Tensor, dict[str, int | bool]]:
         method_config = self.config["method"]
         was_training = self.model.training
         teacher_image = image
         self.model.eval()
         with torch.no_grad():
+            need_random_walk = self.liver_experiment != "E0"
             with lora_disabled(self.model):
                 with self._autocast():
-                    teacher_logits, features = self.model(
+                    teacher_result = self.model(
                         teacher_image,
                         self.embedding,
-                        return_features=True,
+                        return_features=need_random_walk,
                     )
+            if need_random_walk:
+                teacher_logits, features = teacher_result
+            else:
+                teacher_logits = teacher_result
+                features = None
             source_probability = torch.sigmoid(teacher_logits.float())
             threshold = float(method_config["probability_threshold"])
             confidence = None
@@ -1385,31 +1695,32 @@ class CUETrainer:
             else:
                 teacher_probability = source_probability
             raw_voxels = int((teacher_probability >= threshold).sum().item())
-            propagated = affinity_random_walk(
-                probability=teacher_probability,
-                features=features,
-                image=teacher_image,
-                output_size=tuple(teacher_probability.shape[-3:]),
-                graph_size=tuple(
-                    int(value) for value in method_config["random_walk_size"]
-                ),
-                steps=int(method_config["random_walk_steps"]),
-                alpha=float(method_config["random_walk_alpha"]),
-                temperature=float(method_config["affinity_temperature"]),
-                score_pooling=str(
-                    method_config.get("random_walk_score_pooling", "average")
-                ),
-            )
-            refined = propagated.clamp(0.0, 1.0)
-            if bool(method_config.get("preserve_raw_foreground", False)):
-                # The paper's 2-D full-resolution graph has no pooling stage.
-                # Preserve teacher foreground seeds so adaptive pooling cannot
-                # erase small structures in the memory-bounded 3-D extension.
-                refined = torch.maximum(refined, teacher_probability)
+            if self.liver_experiment == "E0":
+                # E0 is deliberately the fixed-source soft target ablation.
+                refined = teacher_probability
+            else:
+                propagated = affinity_random_walk(
+                    probability=teacher_probability,
+                    features=features,
+                    image=teacher_image,
+                    output_size=tuple(teacher_probability.shape[-3:]),
+                    graph_size=tuple(
+                        int(value) for value in method_config["random_walk_size"]
+                    ),
+                    steps=int(method_config["random_walk_steps"]),
+                    alpha=float(method_config["random_walk_alpha"]),
+                    temperature=float(method_config["affinity_temperature"]),
+                    score_pooling=str(
+                        method_config.get("random_walk_score_pooling", "average")
+                    ),
+                )
+                refined = propagated.clamp(0.0, 1.0)
+                if bool(method_config.get("preserve_raw_foreground", False)):
+                    refined = torch.maximum(refined, teacher_probability)
+                del propagated
             del features
             del teacher_logits
             del teacher_probability
-            del propagated
         self.model.train(was_training)
         with self._autocast():
             student_logits = self.model(teacher_image, self.embedding)
@@ -1420,30 +1731,107 @@ class CUETrainer:
         weight = torch.ones_like(refined) if confidence is None else confidence
         pseudo_voxels = int((refined >= threshold).sum().item())
         minimum = int(method_config.get("min_pseudo_foreground_voxels", 8))
+        base_effective = pseudo_voxels >= minimum
         patch_metrics = {
             "raw_foreground_voxels": raw_voxels,
             "refined_foreground_voxels": pseudo_voxels,
             "voxels": refined.numel(),
-            "effective": pseudo_voxels >= minimum,
+            "effective": base_effective,
         }
-        if pseudo_voxels < minimum:
-            return student_logits.float().sum() * 0.0, patch_metrics
-        if bool(self.config["train"].get("balance_high_bce", True)):
-            bce = balanced_masked_binary_cross_entropy(
-                student_probability, refined, weight
+        if base_effective and bool(self.config["train"].get("balance_high_bce", True)):
+            bce = balanced_masked_binary_cross_entropy(student_probability, refined, weight)
+            dice = masked_soft_dice_loss(student_probability, refined, weight)
+            train_config = self.config["train"]
+            loss = (
+                float(train_config["high_bce_weight"]) * bce
+                + float(train_config["high_dice_weight"]) * dice
             )
-        else:
+            patch_metrics["high_bce_loss"] = float(bce.detach())
+            patch_metrics["high_dice_loss"] = float(dice.detach())
+        elif base_effective:
             foreground_weight = float(
                 self.config["train"].get("high_foreground_weight", 5.0)
             )
-            weight = weight * (1.0 + (foreground_weight - 1.0) * refined.detach())
-            bce = masked_binary_cross_entropy(student_probability, refined, weight)
-        dice = masked_soft_dice_loss(student_probability, refined, weight)
-        train_config = self.config["train"]
-        loss = (
-            float(train_config["high_bce_weight"]) * bce
-            + float(train_config["high_dice_weight"]) * dice
-        )
+            weighted_voxels = weight * (
+                1.0 + (foreground_weight - 1.0) * refined.detach()
+            )
+            bce = masked_binary_cross_entropy(student_probability, refined, weighted_voxels)
+            dice = masked_soft_dice_loss(student_probability, refined, weighted_voxels)
+            train_config = self.config["train"]
+            loss = (
+                float(train_config["high_bce_weight"]) * bce
+                + float(train_config["high_dice_weight"]) * dice
+            )
+            patch_metrics["high_bce_loss"] = float(bce.detach())
+            patch_metrics["high_dice_loss"] = float(dice.detach())
+        else:
+            bce = student_logits.float().sum() * 0.0
+            dice = bce
+            loss = bce
+            patch_metrics["high_bce_loss"] = 0.0
+            patch_metrics["high_dice_loss"] = 0.0
+        extra_components: dict[str, float] = {}
+        extra_effective = False
+        if liver_context is not None and bool(liver_context.get("valid", False)):
+            if self.liver_experiment == "E3":
+                remote = liver_context["remote_background"][
+                    (slice(None), slice(None), *case_slicer)
+                ]
+                remote_loss = remote_background_loss(student_probability, remote)
+                weighted = float(
+                    self.liver_config.get("remote_background", {}).get("weight", 0.1)
+                ) * remote_loss
+                loss = loss + weighted
+                extra_components["remote_background_loss"] = float(remote_loss.detach())
+                extra_effective = bool(remote.any()) and bool(
+                    (student_probability.detach()[remote] > 1e-6).any()
+                )
+            elif self.liver_experiment == "E4":
+                idx = (slice(None), slice(None), *case_slicer)
+                region_loss = partitioned_teacher_loss(
+                    liver_context["teacher_probability"][idx],
+                    student_probability,
+                    liver_context["interior"][idx],
+                    liver_context["boundary"][idx],
+                    liver_context["remote_background"][idx],
+                    interior_weight=float(self.liver_config.get("regions", {}).get("interior_weight", 1.0)),
+                    boundary_weight=float(self.liver_config.get("regions", {}).get("boundary_weight", 0.25)),
+                    background_weight=float(self.liver_config.get("regions", {}).get("background_weight", 1.0)),
+                )
+                weighted = float(
+                    self.liver_config.get("regions", {}).get("loss_weight", 0.1)
+                ) * region_loss
+                loss = loss + weighted
+                extra_components["region_loss"] = float(region_loss.detach())
+                region_mask = (
+                    liver_context["interior"][idx]
+                    | liver_context["boundary"][idx]
+                    | liver_context["remote_background"][idx]
+                )
+                extra_effective = bool(region_mask.any()) and bool(
+                    (
+                        student_probability.detach()[region_mask]
+                        - liver_context["teacher_probability"][idx][region_mask]
+                    ).abs().gt(1e-6).any()
+                )
+            elif self.liver_experiment == "E5":
+                idx = (slice(None), slice(None), *case_slicer)
+                anchor_loss = teacher_anchor_loss(
+                    liver_context["teacher_probability"][idx],
+                    student_probability,
+                    foreground_threshold=float(self.liver_config.get("anchor", {}).get("foreground_threshold", 0.9)),
+                    background_threshold=float(self.liver_config.get("anchor", {}).get("background_threshold", 0.1)),
+                    boundary_weight=float(self.liver_config.get("anchor", {}).get("boundary_weight", 0.1)),
+                )
+                weighted = float(self.liver_config.get("anchor", {}).get("weight", 0.1)) * anchor_loss
+                loss = loss + weighted
+                extra_components["anchor_loss"] = float(anchor_loss.detach())
+                teacher_patch = liver_context["teacher_probability"][idx]
+                extra_effective = bool(
+                    (student_probability.detach() - teacher_patch).abs().gt(1e-6).any()
+                )
+        patch_metrics["effective"] = base_effective or extra_effective
+        patch_metrics.update(extra_components)
         return loss, patch_metrics
 
     def _low_confidence_loss(
@@ -1593,6 +1981,20 @@ class CUETrainer:
             summary["mean_dice"],
             summary["mean_iou"],
         )
+        if self.dynamic_hard_enabled:
+            self.logger.info(
+                "update_counters iteration=%d high_samples=%d high_effective_patches=%d "
+                "low_samples=%d low_effective_patches=%d css_high_accepts=%d/%d "
+                "css_acceptance_rate=%.4f",
+                iteration,
+                self.branch_sample_counts["high"],
+                self.branch_effective_patch_counts["high"],
+                self.branch_sample_counts["low"],
+                self.branch_effective_patch_counts["low"],
+                self.high_selection_accepts,
+                self.high_selection_attempts,
+                self.high_selection_accepts / max(self.high_selection_attempts, 1),
+            )
         self._write_early_stopping()
         return should_stop
 

@@ -153,6 +153,7 @@ def _encode_prompt(
     text_encoder: Path,
     cache_dir: Path,
     device: torch.device,
+    dtype_name: str | None = None,
 ) -> torch.Tensor:
     cache_path = _prompt_cache_path(cache_dir, prompt, text_encoder)
     if cache_path.is_file():
@@ -186,7 +187,11 @@ def _encode_prompt(
         padding_side="left",
         local_files_only=True,
     )
-    dtype = torch.float16 if device.type == "cuda" else torch.float32
+    dtype = (
+        getattr(torch, str(dtype_name))
+        if dtype_name is not None
+        else (torch.float16 if device.type == "cuda" else torch.float32)
+    )
     try:
         backbone = AutoModel.from_pretrained(
             str(text_encoder),
@@ -280,6 +285,7 @@ def load_prompt_embedding(
         text_encoder,
         Path(cache_dir),
         device,
+        model_config.get("text_encoder_dtype"),
     )
     return embedding.to(device)
 

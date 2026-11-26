@@ -6,6 +6,8 @@ from typing import Any
 
 import yaml
 
+from cue_sfda.method.liver_adaptation import EXPERIMENTS
+
 
 def load_config(path: str | Path) -> dict[str, Any]:
     config_path = Path(path).expanduser().resolve()
@@ -131,6 +133,27 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError("train.high_foreground_weight must be at least 1")
     if float(config["train"].get("low_foreground_weight", 1.0)) < 1.0:
         raise ValueError("train.low_foreground_weight must be at least 1")
+    liver = config.get("liver_adaptation", {})
+    liver_experiment = str(liver.get("experiment", "baseline"))
+    if liver_experiment not in EXPERIMENTS:
+        raise ValueError(
+            "liver_adaptation.experiment must be baseline or one of E0-E5"
+        )
+    if liver and not liver.get("teacher_cache_dir"):
+        raise ValueError("liver_adaptation.teacher_cache_dir is required")
+    volume = liver.get("volume_constraint", {})
+    if float(volume.get("margin", 0.1)) < 0.0 or float(volume.get("margin", 0.1)) >= 1.0:
+        raise ValueError("liver_adaptation.volume_constraint.margin must be in [0, 1)")
+    if float(volume.get("weight", 1.0)) < 0.0:
+        raise ValueError("liver_adaptation.volume_constraint.weight cannot be negative")
+    if float(volume.get("shrink_weight", 1.0)) < 0.0:
+        raise ValueError("liver_adaptation.volume_constraint.shrink_weight cannot be negative")
+    if float(liver.get("remote_background", {}).get("distance_mm", 15.0)) <= 0:
+        raise ValueError("liver_adaptation.remote_background.distance_mm must be positive")
+    if float(liver.get("regions", {}).get("boundary_width_mm", 5.0)) <= 0:
+        raise ValueError("liver_adaptation.regions.boundary_width_mm must be positive")
+    if float(liver.get("anchor", {}).get("weight", 0.0)) < 0:
+        raise ValueError("liver_adaptation.anchor.weight cannot be negative")
 
 
 def apply_overrides(config: dict[str, Any], args: Any) -> dict[str, Any]:
