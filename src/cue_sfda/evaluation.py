@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from scipy.ndimage import binary_erosion, distance_transform_edt, generate_binary_structure
 from acvl_utils.cropping_and_padding.bounding_boxes import insert_crop_into_image
 from acvl_utils.cropping_and_padding.padding import pad_nd_image
 from nnunetv2.imageio.nibabel_reader_writer import NibabelIOWithReorient
@@ -86,7 +87,11 @@ def evaluate(
         prediction = probability >= threshold
         label_value = int(config["evaluation"]["label_value"])
         ground_truth = label == label_value
-        metrics = binary_metrics_full(prediction, ground_truth)
+        metrics = binary_metrics_full(
+            prediction,
+            ground_truth,
+            spacing=tuple(float(value) for value in properties.get("spacing", (1.0, 1.0, 1.0))),
+        )
         if save_predictions:
             prediction_path = prediction_dir / case.name
             reader.write_seg(
@@ -133,6 +138,8 @@ def evaluate(
         "mean_iou": float(np.mean([row["iou"] for row in rows])),
         "mean_precision": float(np.mean([row["precision"] for row in rows])),
         "mean_recall": float(np.mean([row["recall"] for row in rows])),
+        "mean_hd95": float(np.mean([row["hd95"] for row in rows])),
+        "mean_asd": float(np.mean([row["asd"] for row in rows])),
         "num_cases": len(rows),
     }
     if source_cache is not None:
@@ -254,14 +261,43 @@ def binary_metrics_full(
     prediction: np.ndarray,
     ground_truth: np.ndarray,
     epsilon: float = 1e-7,
+    spacing: tuple[float, ...] | None = None,
 ) -> dict[str, float]:
-    prediction = prediction.astype(bool, copy=False)
-    ground_truth = ground_truth.astype(bool, copy=False)
+    prediction = np.squeeze(prediction).astype(bool, copy=False)
+    ground_truth = np.squeeze(ground_truth).astype(bool, copy=False)
+    if prediction.shape != ground_truth.shape:
+        raise ValueError(
+            "Prediction and ground-truth shapes differ after removing singleton "
+            f"axes: {prediction.shape} vs {ground_truth.shape}"
+        )
+    if prediction.ndim < 2:
+        raise ValueError(f"Segmentation metrics require spatial arrays, got {prediction.shape}")
     prediction_sum = int(prediction.sum())
     ground_truth_sum = int(ground_truth.sum())
+    if prediction_sum == 0 and ground_truth_sum == 0:
+        hd95 = 0.0
+        asd = 0.0
+    elif prediction_sum == 0 or ground_truth_sum == 0:
+        hd95 = float("inf")
+        asd = float("inf")
+    else:
+        sample_spacing = tuple(float(v) for v in (spacing or (1.0,) * prediction.ndim))
+        if len(sample_spacing) != prediction.ndim or any(v <= 0.0 for v in sample_spacing):
+            raise ValueError(f"Invalid spacing for surface metrics: {sample_spacing}")
+        structure = generate_binary_structure(prediction.ndim, 1)
+        pred_surface = prediction ^ binary_erosion(prediction, structure=structure, border_value=0)
+        gt_surface = ground_truth ^ binary_erosion(ground_truth, structure=structure, border_value=0)
+        distance_to_gt = distance_transform_edt(~gt_surface, sampling=sample_spacing)
+        distance_to_pred = distance_transform_edt(~pred_surface, sampling=sample_spacing)
+        distances = np.concatenate((distance_to_gt[pred_surface], distance_to_pred[gt_surface]))
+        hd95 = float(np.percentile(distances, 95))
+        asd = float(distances.mean())
     if ground_truth_sum == 0:
         score = 1.0 if prediction_sum == 0 else 0.0
-        return {"dice": score, "iou": score, "precision": score, "recall": 1.0}
+        return {
+            "dice": score, "iou": score, "precision": score, "recall": 1.0,
+            "hd95": hd95, "asd": asd,
+        }
     intersection = int(np.logical_and(prediction, ground_truth).sum())
     union = int(np.logical_or(prediction, ground_truth).sum())
     dice = (2.0 * intersection + epsilon) / (
@@ -275,4 +311,6 @@ def binary_metrics_full(
         "iou": float(iou),
         "precision": float(precision),
         "recall": float(recall),
+        "hd95": hd95,
+        "asd": asd,
     }

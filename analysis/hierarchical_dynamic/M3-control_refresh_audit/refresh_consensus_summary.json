@@ -1,0 +1,21 @@
+{
+  "experiment": "M3-control",
+  "num_cases": 101,
+  "version0_mean_consensus_dice": 0.3286757386164814,
+  "version1_mean_consensus_dice": 0.34680299953921123,
+  "mean_consensus_dice_change": 0.01812726092272976,
+  "version0_mean_predicted_voxels": 2213.168316831683,
+  "version1_mean_predicted_voxels": 3088.7128712871286,
+  "mean_predicted_voxels_change": 875.5445544554456,
+  "version0_empty_consensus_predictions": 37,
+  "version1_empty_consensus_predictions": 16,
+  "version0_mean_voxel_confidence": 0.998173442217383,
+  "version1_mean_voxel_confidence": 0.996681543860105,
+  "confidence_change_vs_dice_change": {
+    "pearson_r": -0.14633912455286813,
+    "pearson_p": 0.14421927617068478,
+    "spearman_r": -0.06859570782888744,
+    "spearman_p": 0.4954913296130215
+  },
+  "gt_usage": "offline cache-target diagnostic only; not used in training or cache construction"
+}

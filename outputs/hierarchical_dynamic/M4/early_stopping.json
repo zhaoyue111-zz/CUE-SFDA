@@ -1,0 +1,9 @@
+{
+  "best_dice": 0.3216962247659315,
+  "best_iteration": 350,
+  "best_checkpoint": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/outputs/hierarchical_dynamic/M4/checkpoints/best_iteration_000350_dice_0.321696.pt",
+  "patience_counter": 6,
+  "early_stopping_patience": 10,
+  "stop_iteration": null,
+  "stop_reason": null
+}

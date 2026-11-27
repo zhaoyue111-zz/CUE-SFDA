@@ -1,0 +1,1 @@
+M3-control reached iteration 50 and completed validation (mean Dice 0.285071, IoU 0.218885). The subsequent summary CSV write raised ValueError because `discount_sum` was emitted but missing from the declared DictWriter fields. The iteration-50 best checkpoint was successfully written before the error. Resume from that checkpoint after adding the missing field to the CSV schema.

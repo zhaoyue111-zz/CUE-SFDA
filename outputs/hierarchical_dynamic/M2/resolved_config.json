@@ -1,0 +1,121 @@
+{
+  "experiment": {
+    "seed": 42,
+    "gpu_id": 0,
+    "output_dir": "outputs/hierarchical_dynamic/M2",
+    "hierarchical_mode": "M2"
+  },
+  "data": {
+    "image_dir": "/data/hilab/datasets/WCH_MRI145/DWI/images",
+    "split_json": "/data/hilab/datasets/WCH_MRI145/DWI/split.json",
+    "patch_size": [
+      192,
+      192,
+      192
+    ]
+  },
+  "model": {
+    "voxtell_root": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk",
+    "model_dir": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model",
+    "text_encoder": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/Qwen3-Embedding-4B",
+    "prompt": "liver cancer",
+    "amp": true,
+    "lora_rank": 8,
+    "lora_alpha": 16.0,
+    "lora_dropout": 0.0,
+    "lora_linear_targets": [
+      "text_projection",
+      "final_mask_projection"
+    ]
+  },
+  "method": {
+    "iterations": 2000,
+    "calibration_cases": 0,
+    "num_views": 10,
+    "mixup_alpha": 0.75,
+    "probability_threshold": 0.5,
+    "chebyshev_threshold": 0.8,
+    "quality_threshold": 0.5,
+    "confidence_ema": 0.9,
+    "source_only_confidence": true,
+    "update_confidence_partition": false,
+    "high_quality_sampling_probability": 0.75,
+    "low_quality_views": 3,
+    "style_mix_probability": 0.75,
+    "noise_std": 0.08,
+    "gamma_range": [
+      0.7,
+      1.5
+    ],
+    "random_walk_size": [
+      16,
+      32,
+      32
+    ],
+    "random_walk_steps": 4,
+    "random_walk_alpha": 0.0,
+    "affinity_temperature": 0.15,
+    "random_walk_score_pooling": "max",
+    "preserve_raw_foreground": true,
+    "min_pseudo_foreground_voxels": 8,
+    "min_case_pseudo_foreground_voxels": 64,
+    "routing_mode": "joint_empty_to_low",
+    "routing_uncertainty_csv": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/diagnostic/dwi_uncertainty_train/per_case_uncertainty.csv",
+    "routing_reference_partition": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA/outputs/dwi_only_liver_cancer/confidence_partition.json",
+    "routing_prompts": [
+      "liver cancer",
+      "liver tumor",
+      "HCC",
+      "hepatocellular carcinoma"
+    ],
+    "routing_high_cases": 59
+  },
+  "train": {
+    "learning_rate": 1e-05,
+    "weight_decay": 0.0001,
+    "tile_step_size": 0.5,
+    "validation_every": 50,
+    "early_stopping_patience": 10,
+    "save_validation_predictions": false,
+    "validate_at_start": true,
+    "max_grad_norm": 1.0,
+    "high_dice_weight": 1.0,
+    "high_bce_weight": 1.0,
+    "high_foreground_weight": 5.0,
+    "balance_high_bce": true,
+    "low_consistency_weight": 1.0,
+    "low_foreground_weight": 5.0,
+    "balance_low_consistency": true,
+    "low_entropy_weight": 0.0,
+    "log_every": 10,
+    "save_every": 50
+  },
+  "evaluation": {
+    "tile_step_size": 0.5,
+    "threshold": 0.5,
+    "label_value": 1
+  },
+  "dynamic_hard": {
+    "mode": "dynamic_hard",
+    "cache_dir": "outputs/hierarchical_dynamic/M2_pre_empty_gate/dynamic_hard_cache",
+    "standard_prompt": "liver cancer",
+    "prompts": [
+      "liver cancer",
+      "liver tumor",
+      "HCC",
+      "hepatocellular carcinoma"
+    ],
+    "image_temperature": 0.15,
+    "prompt_temperature": 0.15,
+    "lambda_consensus": 0.05,
+    "confidence_threshold": 0.0,
+    "refresh_tile_step_size": 1.0,
+    "max_refresh_cycles": 1
+  },
+  "pixel_uncertainty": {
+    "cache_dir": "analysis/hierarchical_dynamic/fixed_pixel_uncertainty",
+    "source": "analysis/hierarchical_uncertainty/stage1_image_level/probabilities",
+    "refresh": "fixed"
+  },
+  "_config_path": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/configs/hierarchical_m2.yaml"
+}

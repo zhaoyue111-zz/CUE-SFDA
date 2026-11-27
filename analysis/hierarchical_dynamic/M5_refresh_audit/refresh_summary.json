@@ -1,0 +1,22 @@
+{
+  "before_version": 0,
+  "after_version": 1,
+  "num_cases": 101,
+  "mean_initial_confidence": 0.5338108598332956,
+  "mean_refreshed_confidence": 0.6272246389285092,
+  "mean_confidence_change": 0.0934137790952136,
+  "mean_source_dice": 0.3381570211259672,
+  "mean_refreshed_dice": 0.3443151486634293,
+  "mean_dice_change": 0.006158127537462267,
+  "source_empty_predictions": 20,
+  "refreshed_empty_predictions": 2,
+  "new_empty_predictions": 0,
+  "recovered_from_empty": 18,
+  "confidence_change_vs_dice_change": {
+    "pearson_r": 0.5147517106388177,
+    "pearson_p": 3.650329837274789e-08,
+    "spearman_r": 0.5227226922066956,
+    "spearman_p": 2.0552239971126514e-08
+  },
+  "gt_role": "offline diagnostics only; never used in training, sampling, confidence, or cache construction"
+}

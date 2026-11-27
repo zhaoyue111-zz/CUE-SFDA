@@ -1,0 +1,21 @@
+{
+  "experiment": "M1",
+  "num_cases": 101,
+  "version0_mean_consensus_dice": 0.3286757386164814,
+  "version1_mean_consensus_dice": 0.32335716229052464,
+  "mean_consensus_dice_change": -0.005318576325956834,
+  "version0_mean_predicted_voxels": 2213.168316831683,
+  "version1_mean_predicted_voxels": 6793.534653465346,
+  "mean_predicted_voxels_change": 4580.366336633663,
+  "version0_empty_consensus_predictions": 37,
+  "version1_empty_consensus_predictions": 1,
+  "version0_mean_voxel_confidence": 0.998173442217383,
+  "version1_mean_voxel_confidence": 0.9891541234337458,
+  "confidence_change_vs_dice_change": {
+    "pearson_r": 0.10291205932126549,
+    "pearson_p": 0.30578716288568586,
+    "spearman_r": -0.04430092534815802,
+    "spearman_p": 0.6600145342649711
+  },
+  "gt_usage": "offline cache-target diagnostic only; not used in training or cache construction"
+}

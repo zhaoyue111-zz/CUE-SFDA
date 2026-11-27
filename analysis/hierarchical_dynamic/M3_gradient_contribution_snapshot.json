@@ -1,0 +1,22 @@
+{
+  "M3-control": {
+    "sampled_case_opportunities": 650,
+    "gradient_norm_before_sum": 7233.107290066217,
+    "gradient_norm_after_sum": 7233.107290066217,
+    "after_before_ratio": 1.0,
+    "mean_discount_weighted_by_sample_count": 1.0,
+    "zero_discount_occurrences": 0,
+    "zero_gradient_occurrences": 26,
+    "case_gradient_contributions_csv": "outputs/hierarchical_dynamic/M3-control/case_gradient_contributions.csv"
+  },
+  "M3-discount": {
+    "sampled_case_opportunities": 500,
+    "gradient_norm_before_sum": 3997.9468419572095,
+    "gradient_norm_after_sum": 2240.6774646000326,
+    "after_before_ratio": 0.5604570428713106,
+    "mean_discount_weighted_by_sample_count": 0.5368047548034451,
+    "zero_discount_occurrences": 89,
+    "zero_gradient_occurrences": 102,
+    "case_gradient_contributions_csv": "outputs/hierarchical_dynamic/M3-discount/case_gradient_contributions.csv"
+  }
+}

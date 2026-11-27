@@ -1,0 +1,21 @@
+{
+  "experiment": "M3-discount",
+  "num_cases": 101,
+  "version0_mean_consensus_dice": 0.3286757386164814,
+  "version1_mean_consensus_dice": 0.3476606288511507,
+  "mean_consensus_dice_change": 0.018984890234669375,
+  "version0_mean_predicted_voxels": 2213.168316831683,
+  "version1_mean_predicted_voxels": 3059.70297029703,
+  "mean_predicted_voxels_change": 846.5346534653465,
+  "version0_empty_consensus_predictions": 37,
+  "version1_empty_consensus_predictions": 17,
+  "version0_mean_voxel_confidence": 0.998173442217383,
+  "version1_mean_voxel_confidence": 0.99672663742953,
+  "confidence_change_vs_dice_change": {
+    "pearson_r": -0.15833297875865038,
+    "pearson_p": 0.11378358934372107,
+    "spearman_r": -0.05663182299246926,
+    "spearman_p": 0.5737684319875228
+  },
+  "gt_usage": "offline cache-target diagnostic only; not used in training or cache construction"
+}

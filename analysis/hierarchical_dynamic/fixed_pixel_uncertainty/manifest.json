@@ -1,0 +1,3840 @@
+[
+  {
+    "case_id": "0000155006",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0000155006.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      298,
+      378
+    ],
+    "padded_shape": [
+      192,
+      298,
+      378
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        298
+      ],
+      [
+        0,
+        378
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0000321625",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0000321625.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      191,
+      251
+    ],
+    "padded_shape": [
+      192,
+      192,
+      251
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        191
+      ],
+      [
+        0,
+        251
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0000480919",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0000480919.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      18,
+      251,
+      256
+    ],
+    "padded_shape": [
+      192,
+      251,
+      256
+    ],
+    "roi_slicer": [
+      [
+        87,
+        105
+      ],
+      [
+        0,
+        251
+      ],
+      [
+        0,
+        256
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0000503556",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0000503556.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      28,
+      204,
+      256
+    ],
+    "padded_shape": [
+      192,
+      204,
+      256
+    ],
+    "roi_slicer": [
+      [
+        82,
+        110
+      ],
+      [
+        0,
+        204
+      ],
+      [
+        0,
+        256
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0000801631",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0000801631.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      28,
+      192,
+      256
+    ],
+    "padded_shape": [
+      192,
+      192,
+      256
+    ],
+    "roi_slicer": [
+      [
+        82,
+        110
+      ],
+      [
+        0,
+        192
+      ],
+      [
+        0,
+        256
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0001439686",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0001439686.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      191,
+      251
+    ],
+    "padded_shape": [
+      192,
+      192,
+      251
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        191
+      ],
+      [
+        0,
+        251
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0001491294",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0001491294.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      28,
+      204,
+      256
+    ],
+    "padded_shape": [
+      192,
+      204,
+      256
+    ],
+    "roi_slicer": [
+      [
+        82,
+        110
+      ],
+      [
+        0,
+        204
+      ],
+      [
+        0,
+        256
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0001679853",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0001679853.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      74,
+      96
+    ],
+    "padded_shape": [
+      192,
+      192,
+      192
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        59,
+        133
+      ],
+      [
+        48,
+        144
+      ]
+    ],
+    "original_prediction_empty": true
+  },
+  {
+    "case_id": "0002088892",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0002088892.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      214,
+      249
+    ],
+    "padded_shape": [
+      192,
+      214,
+      249
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        214
+      ],
+      [
+        0,
+        249
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0002265234",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0002265234.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      74,
+      96
+    ],
+    "padded_shape": [
+      192,
+      192,
+      192
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        59,
+        133
+      ],
+      [
+        48,
+        144
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0002453066",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0002453066.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      191,
+      251
+    ],
+    "padded_shape": [
+      192,
+      192,
+      251
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        191
+      ],
+      [
+        0,
+        251
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0002855133",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0002855133.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      191,
+      250
+    ],
+    "padded_shape": [
+      192,
+      192,
+      250
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        191
+      ],
+      [
+        0,
+        250
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0003081296",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0003081296.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      128,
+      155
+    ],
+    "padded_shape": [
+      192,
+      192,
+      192
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        32,
+        160
+      ],
+      [
+        18,
+        173
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0004918328",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0004918328.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      298,
+      376
+    ],
+    "padded_shape": [
+      192,
+      298,
+      376
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        298
+      ],
+      [
+        0,
+        376
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0006150559",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0006150559.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      22,
+      249,
+      252
+    ],
+    "padded_shape": [
+      192,
+      249,
+      252
+    ],
+    "roi_slicer": [
+      [
+        85,
+        107
+      ],
+      [
+        0,
+        249
+      ],
+      [
+        0,
+        252
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0006317240",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0006317240.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      297,
+      377
+    ],
+    "padded_shape": [
+      192,
+      297,
+      377
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        297
+      ],
+      [
+        0,
+        377
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0006410698",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0006410698.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      297,
+      376
+    ],
+    "padded_shape": [
+      192,
+      297,
+      376
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        297
+      ],
+      [
+        0,
+        376
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0007059954",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0007059954.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      204,
+      256
+    ],
+    "padded_shape": [
+      192,
+      204,
+      256
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        204
+      ],
+      [
+        0,
+        256
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0007994390",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0007994390.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      298,
+      375
+    ],
+    "padded_shape": [
+      192,
+      298,
+      375
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        298
+      ],
+      [
+        0,
+        375
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0008006851",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0008006851.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      298,
+      377
+    ],
+    "padded_shape": [
+      192,
+      298,
+      377
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        298
+      ],
+      [
+        0,
+        377
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0008266836",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0008266836.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      191,
+      250
+    ],
+    "padded_shape": [
+      192,
+      192,
+      250
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        191
+      ],
+      [
+        0,
+        250
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0008386298",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0008386298.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      74,
+      97
+    ],
+    "padded_shape": [
+      192,
+      192,
+      192
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        59,
+        133
+      ],
+      [
+        47,
+        144
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0008446207",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0008446207.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      297,
+      376
+    ],
+    "padded_shape": [
+      192,
+      297,
+      376
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        297
+      ],
+      [
+        0,
+        376
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0008877866",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0008877866.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      28,
+      204,
+      256
+    ],
+    "padded_shape": [
+      192,
+      204,
+      256
+    ],
+    "roi_slicer": [
+      [
+        82,
+        110
+      ],
+      [
+        0,
+        204
+      ],
+      [
+        0,
+        256
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0009011272",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0009011272.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      26,
+      255,
+      256
+    ],
+    "padded_shape": [
+      192,
+      255,
+      256
+    ],
+    "roi_slicer": [
+      [
+        83,
+        109
+      ],
+      [
+        0,
+        255
+      ],
+      [
+        0,
+        256
+      ]
+    ],
+    "original_prediction_empty": true
+  },
+  {
+    "case_id": "0009699253",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0009699253.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      298,
+      376
+    ],
+    "padded_shape": [
+      192,
+      298,
+      376
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        298
+      ],
+      [
+        0,
+        376
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0009772348",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0009772348.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      74,
+      96
+    ],
+    "padded_shape": [
+      192,
+      192,
+      192
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        59,
+        133
+      ],
+      [
+        48,
+        144
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0009808605",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0009808605.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      192,
+      252
+    ],
+    "padded_shape": [
+      192,
+      192,
+      252
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        192
+      ],
+      [
+        0,
+        252
+      ]
+    ],
+    "original_prediction_empty": true
+  },
+  {
+    "case_id": "0009818705",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0009818705.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      74,
+      97
+    ],
+    "padded_shape": [
+      192,
+      192,
+      192
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        59,
+        133
+      ],
+      [
+        47,
+        144
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0010325750",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0010325750.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      298,
+      381
+    ],
+    "padded_shape": [
+      192,
+      298,
+      381
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        298
+      ],
+      [
+        0,
+        381
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0010392655",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0010392655.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      28,
+      172,
+      256
+    ],
+    "padded_shape": [
+      192,
+      192,
+      256
+    ],
+    "roi_slicer": [
+      [
+        82,
+        110
+      ],
+      [
+        10,
+        182
+      ],
+      [
+        0,
+        256
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0010909045",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0010909045.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      204,
+      256
+    ],
+    "padded_shape": [
+      192,
+      204,
+      256
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        204
+      ],
+      [
+        0,
+        256
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0011024068",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0011024068.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      298,
+      376
+    ],
+    "padded_shape": [
+      192,
+      298,
+      376
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        298
+      ],
+      [
+        0,
+        376
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0011295982",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0011295982.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      298,
+      378
+    ],
+    "padded_shape": [
+      192,
+      298,
+      378
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        298
+      ],
+      [
+        0,
+        378
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0011880319",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0011880319.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      28,
+      204,
+      256
+    ],
+    "padded_shape": [
+      192,
+      204,
+      256
+    ],
+    "roi_slicer": [
+      [
+        82,
+        110
+      ],
+      [
+        0,
+        204
+      ],
+      [
+        0,
+        256
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0013263151",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0013263151.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      74,
+      96
+    ],
+    "padded_shape": [
+      192,
+      192,
+      192
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        59,
+        133
+      ],
+      [
+        48,
+        144
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0013482554",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0013482554.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      128,
+      155
+    ],
+    "padded_shape": [
+      192,
+      192,
+      192
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        32,
+        160
+      ],
+      [
+        18,
+        173
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0013837968",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0013837968.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      204,
+      256
+    ],
+    "padded_shape": [
+      192,
+      204,
+      256
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        204
+      ],
+      [
+        0,
+        256
+      ]
+    ],
+    "original_prediction_empty": true
+  },
+  {
+    "case_id": "0014186880",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0014186880.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      28,
+      204,
+      256
+    ],
+    "padded_shape": [
+      192,
+      204,
+      256
+    ],
+    "roi_slicer": [
+      [
+        82,
+        110
+      ],
+      [
+        0,
+        204
+      ],
+      [
+        0,
+        256
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0015026134",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0015026134.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      30,
+      74,
+      97
+    ],
+    "padded_shape": [
+      192,
+      192,
+      192
+    ],
+    "roi_slicer": [
+      [
+        81,
+        111
+      ],
+      [
+        59,
+        133
+      ],
+      [
+        47,
+        144
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0015474563",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0015474563.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      193,
+      253
+    ],
+    "padded_shape": [
+      192,
+      193,
+      253
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        193
+      ],
+      [
+        0,
+        253
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0015743530",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0015743530.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      128,
+      155
+    ],
+    "padded_shape": [
+      192,
+      192,
+      192
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        32,
+        160
+      ],
+      [
+        18,
+        173
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0015855177",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0015855177.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      128,
+      155
+    ],
+    "padded_shape": [
+      192,
+      192,
+      192
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        32,
+        160
+      ],
+      [
+        18,
+        173
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0015953398",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0015953398.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      78,
+      96
+    ],
+    "padded_shape": [
+      192,
+      192,
+      192
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        57,
+        135
+      ],
+      [
+        48,
+        144
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0015978449",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0015978449.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      74,
+      96
+    ],
+    "padded_shape": [
+      192,
+      192,
+      192
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        59,
+        133
+      ],
+      [
+        48,
+        144
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0015988711",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0015988711.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      74,
+      97
+    ],
+    "padded_shape": [
+      192,
+      192,
+      192
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        59,
+        133
+      ],
+      [
+        47,
+        144
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0016011685",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0016011685.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      74,
+      96
+    ],
+    "padded_shape": [
+      192,
+      192,
+      192
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        59,
+        133
+      ],
+      [
+        48,
+        144
+      ]
+    ],
+    "original_prediction_empty": true
+  },
+  {
+    "case_id": "0016167739",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0016167739.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      192,
+      251
+    ],
+    "padded_shape": [
+      192,
+      192,
+      251
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        192
+      ],
+      [
+        0,
+        251
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0016224160",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0016224160.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      74,
+      97
+    ],
+    "padded_shape": [
+      192,
+      192,
+      192
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        59,
+        133
+      ],
+      [
+        47,
+        144
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0016377191",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0016377191.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      192,
+      253
+    ],
+    "padded_shape": [
+      192,
+      192,
+      253
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        192
+      ],
+      [
+        0,
+        253
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0016804070",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0016804070.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      243,
+      256
+    ],
+    "padded_shape": [
+      192,
+      243,
+      256
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        243
+      ],
+      [
+        0,
+        256
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0016980775",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0016980775.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      191,
+      251
+    ],
+    "padded_shape": [
+      192,
+      192,
+      251
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        191
+      ],
+      [
+        0,
+        251
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0017174204",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0017174204.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      74,
+      97
+    ],
+    "padded_shape": [
+      192,
+      192,
+      192
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        59,
+        133
+      ],
+      [
+        47,
+        144
+      ]
+    ],
+    "original_prediction_empty": true
+  },
+  {
+    "case_id": "0017224470",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0017224470.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      28,
+      214,
+      256
+    ],
+    "padded_shape": [
+      192,
+      214,
+      256
+    ],
+    "roi_slicer": [
+      [
+        82,
+        110
+      ],
+      [
+        0,
+        214
+      ],
+      [
+        0,
+        256
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0017351674",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0017351674.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      74,
+      97
+    ],
+    "padded_shape": [
+      192,
+      192,
+      192
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        59,
+        133
+      ],
+      [
+        47,
+        144
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0017354579",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0017354579.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      74,
+      96
+    ],
+    "padded_shape": [
+      192,
+      192,
+      192
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        59,
+        133
+      ],
+      [
+        48,
+        144
+      ]
+    ],
+    "original_prediction_empty": true
+  },
+  {
+    "case_id": "0017405680",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0017405680.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      74,
+      98
+    ],
+    "padded_shape": [
+      192,
+      192,
+      192
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        59,
+        133
+      ],
+      [
+        47,
+        145
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0017452826",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0017452826.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      74,
+      97
+    ],
+    "padded_shape": [
+      192,
+      192,
+      192
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        59,
+        133
+      ],
+      [
+        47,
+        144
+      ]
+    ],
+    "original_prediction_empty": true
+  },
+  {
+    "case_id": "0017484860",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0017484860.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      74,
+      96
+    ],
+    "padded_shape": [
+      192,
+      192,
+      192
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        59,
+        133
+      ],
+      [
+        48,
+        144
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0017554294",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0017554294.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      296,
+      376
+    ],
+    "padded_shape": [
+      192,
+      296,
+      376
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        296
+      ],
+      [
+        0,
+        376
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0017686511",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0017686511.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      298,
+      376
+    ],
+    "padded_shape": [
+      192,
+      298,
+      376
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        298
+      ],
+      [
+        0,
+        376
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0017805624",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0017805624.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      298,
+      377
+    ],
+    "padded_shape": [
+      192,
+      298,
+      377
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        298
+      ],
+      [
+        0,
+        377
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0017811498",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0017811498.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      298,
+      379
+    ],
+    "padded_shape": [
+      192,
+      298,
+      379
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        298
+      ],
+      [
+        0,
+        379
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0017815612",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0017815612.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      298,
+      380
+    ],
+    "padded_shape": [
+      192,
+      298,
+      380
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        298
+      ],
+      [
+        0,
+        380
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0018022330",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0018022330.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      298,
+      377
+    ],
+    "padded_shape": [
+      192,
+      298,
+      377
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        298
+      ],
+      [
+        0,
+        377
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0018122332",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0018122332.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      298,
+      379
+    ],
+    "padded_shape": [
+      192,
+      298,
+      379
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        298
+      ],
+      [
+        0,
+        379
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0018128083",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0018128083.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      297,
+      376
+    ],
+    "padded_shape": [
+      192,
+      297,
+      376
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        297
+      ],
+      [
+        0,
+        376
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0018199637",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0018199637.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      297,
+      376
+    ],
+    "padded_shape": [
+      192,
+      297,
+      376
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        297
+      ],
+      [
+        0,
+        376
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0018289026",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0018289026.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      244,
+      256
+    ],
+    "padded_shape": [
+      192,
+      244,
+      256
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        244
+      ],
+      [
+        0,
+        256
+      ]
+    ],
+    "original_prediction_empty": true
+  },
+  {
+    "case_id": "0018290394",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0018290394.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      193,
+      252
+    ],
+    "padded_shape": [
+      192,
+      193,
+      252
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        193
+      ],
+      [
+        0,
+        252
+      ]
+    ],
+    "original_prediction_empty": true
+  },
+  {
+    "case_id": "0018411622",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0018411622.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      298,
+      379
+    ],
+    "padded_shape": [
+      192,
+      298,
+      379
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        298
+      ],
+      [
+        0,
+        379
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0018689853",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0018689853.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      191,
+      250
+    ],
+    "padded_shape": [
+      192,
+      192,
+      250
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        191
+      ],
+      [
+        0,
+        250
+      ]
+    ],
+    "original_prediction_empty": true
+  },
+  {
+    "case_id": "0018806748",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0018806748.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      298,
+      376
+    ],
+    "padded_shape": [
+      192,
+      298,
+      376
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        298
+      ],
+      [
+        0,
+        376
+      ]
+    ],
+    "original_prediction_empty": true
+  },
+  {
+    "case_id": "0019209571",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0019209571.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      297,
+      377
+    ],
+    "padded_shape": [
+      192,
+      297,
+      377
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        297
+      ],
+      [
+        0,
+        377
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0019218185",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0019218185.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      297,
+      380
+    ],
+    "padded_shape": [
+      192,
+      297,
+      380
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        297
+      ],
+      [
+        0,
+        380
+      ]
+    ],
+    "original_prediction_empty": true
+  },
+  {
+    "case_id": "0019227930",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0019227930.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      204,
+      256
+    ],
+    "padded_shape": [
+      192,
+      204,
+      256
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        204
+      ],
+      [
+        0,
+        256
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0019873347",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0019873347.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      191,
+      250
+    ],
+    "padded_shape": [
+      192,
+      192,
+      250
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        191
+      ],
+      [
+        0,
+        250
+      ]
+    ],
+    "original_prediction_empty": true
+  },
+  {
+    "case_id": "0019971803",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0019971803.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      28,
+      204,
+      256
+    ],
+    "padded_shape": [
+      192,
+      204,
+      256
+    ],
+    "roi_slicer": [
+      [
+        82,
+        110
+      ],
+      [
+        0,
+        204
+      ],
+      [
+        0,
+        256
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0020946113",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0020946113.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      191,
+      250
+    ],
+    "padded_shape": [
+      192,
+      192,
+      250
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        191
+      ],
+      [
+        0,
+        250
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0021127910",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0021127910.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      298,
+      377
+    ],
+    "padded_shape": [
+      192,
+      298,
+      377
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        298
+      ],
+      [
+        0,
+        377
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0032174364",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0032174364.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      251,
+      255
+    ],
+    "padded_shape": [
+      192,
+      251,
+      255
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        251
+      ],
+      [
+        0,
+        255
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0032182222",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0032182222.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      192,
+      251
+    ],
+    "padded_shape": [
+      192,
+      192,
+      251
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        192
+      ],
+      [
+        0,
+        251
+      ]
+    ],
+    "original_prediction_empty": true
+  },
+  {
+    "case_id": "0032229283",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0032229283.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      193,
+      252
+    ],
+    "padded_shape": [
+      192,
+      193,
+      252
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        193
+      ],
+      [
+        0,
+        252
+      ]
+    ],
+    "original_prediction_empty": true
+  },
+  {
+    "case_id": "0032257210",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0032257210.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      192,
+      251
+    ],
+    "padded_shape": [
+      192,
+      192,
+      251
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        192
+      ],
+      [
+        0,
+        251
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0032540537",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0032540537.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      189,
+      251
+    ],
+    "padded_shape": [
+      192,
+      192,
+      251
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        1,
+        190
+      ],
+      [
+        0,
+        251
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0032677922",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0032677922.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      192,
+      251
+    ],
+    "padded_shape": [
+      192,
+      192,
+      251
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        192
+      ],
+      [
+        0,
+        251
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0032710370",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0032710370.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      204,
+      256
+    ],
+    "padded_shape": [
+      192,
+      204,
+      256
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        204
+      ],
+      [
+        0,
+        256
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0032812091",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0032812091.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      204,
+      256
+    ],
+    "padded_shape": [
+      192,
+      204,
+      256
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        204
+      ],
+      [
+        0,
+        256
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0032834064",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0032834064.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      204,
+      255
+    ],
+    "padded_shape": [
+      192,
+      204,
+      255
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        204
+      ],
+      [
+        0,
+        255
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0032929968",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0032929968.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      28,
+      204,
+      256
+    ],
+    "padded_shape": [
+      192,
+      204,
+      256
+    ],
+    "roi_slicer": [
+      [
+        82,
+        110
+      ],
+      [
+        0,
+        204
+      ],
+      [
+        0,
+        256
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0032961497",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0032961497.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      193,
+      253
+    ],
+    "padded_shape": [
+      192,
+      193,
+      253
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        193
+      ],
+      [
+        0,
+        253
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0033052451",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0033052451.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      298,
+      376
+    ],
+    "padded_shape": [
+      192,
+      298,
+      376
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        298
+      ],
+      [
+        0,
+        376
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0033102538",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0033102538.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      191,
+      251
+    ],
+    "padded_shape": [
+      192,
+      192,
+      251
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        191
+      ],
+      [
+        0,
+        251
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0033164178",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0033164178.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      186,
+      251
+    ],
+    "padded_shape": [
+      192,
+      192,
+      251
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        3,
+        189
+      ],
+      [
+        0,
+        251
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0033235247",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0033235247.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      28,
+      204,
+      256
+    ],
+    "padded_shape": [
+      192,
+      204,
+      256
+    ],
+    "roi_slicer": [
+      [
+        82,
+        110
+      ],
+      [
+        0,
+        204
+      ],
+      [
+        0,
+        256
+      ]
+    ],
+    "original_prediction_empty": true
+  },
+  {
+    "case_id": "0033315871",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0033315871.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      28,
+      204,
+      256
+    ],
+    "padded_shape": [
+      192,
+      204,
+      256
+    ],
+    "roi_slicer": [
+      [
+        82,
+        110
+      ],
+      [
+        0,
+        204
+      ],
+      [
+        0,
+        256
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0033498429",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0033498429.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      27,
+      298,
+      377
+    ],
+    "padded_shape": [
+      192,
+      298,
+      377
+    ],
+    "roi_slicer": [
+      [
+        82,
+        109
+      ],
+      [
+        0,
+        298
+      ],
+      [
+        0,
+        377
+      ]
+    ],
+    "original_prediction_empty": true
+  },
+  {
+    "case_id": "0033655986",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0033655986.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      24,
+      251,
+      256
+    ],
+    "padded_shape": [
+      192,
+      251,
+      256
+    ],
+    "roi_slicer": [
+      [
+        84,
+        108
+      ],
+      [
+        0,
+        251
+      ],
+      [
+        0,
+        256
+      ]
+    ],
+    "original_prediction_empty": true
+  },
+  {
+    "case_id": "0033923781",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0033923781.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      298,
+      376
+    ],
+    "padded_shape": [
+      192,
+      298,
+      376
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        298
+      ],
+      [
+        0,
+        376
+      ]
+    ],
+    "original_prediction_empty": true
+  },
+  {
+    "case_id": "0034092512",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0034092512.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      298,
+      376
+    ],
+    "padded_shape": [
+      192,
+      298,
+      376
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        298
+      ],
+      [
+        0,
+        376
+      ]
+    ],
+    "original_prediction_empty": false
+  },
+  {
+    "case_id": "0034131385",
+    "source_probability_file": "/home/ubuntu/zy/pythoncode/sfda/CUE-SFDA-Stage1/analysis/hierarchical_uncertainty/stage1_image_level/probabilities/0034131385.npz",
+    "source_model_checkpoint": {
+      "exists": true,
+      "mtime_ns": 1778555868000000000,
+      "path": "/home/ubuntu/zy/pythoncode/sfda/VoxTell_from_disk/model/checkpoint_final.pth",
+      "size": 1774589029
+    },
+    "entropy_base": "log2",
+    "fusion": "0.5*H(mean(image_views))+0.5*H(mean(prompt_views))",
+    "weight": "1-U_pixel",
+    "roi_shape": [
+      25,
+      298,
+      376
+    ],
+    "padded_shape": [
+      192,
+      298,
+      376
+    ],
+    "roi_slicer": [
+      [
+        83,
+        108
+      ],
+      [
+        0,
+        298
+      ],
+      [
+        0,
+        376
+      ]
+    ],
+    "original_prediction_empty": false
+  }
+]

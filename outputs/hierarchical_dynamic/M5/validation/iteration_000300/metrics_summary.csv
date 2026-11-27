@@ -1,0 +1,2 @@
+mean_dice,mean_iou,mean_precision,mean_recall,mean_hd95,mean_asd,num_cases
+0.3158022503006742,0.23917766137061855,0.36591424116973564,0.38620192175520995,inf,inf,44

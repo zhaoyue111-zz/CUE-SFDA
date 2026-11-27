@@ -4,6 +4,7 @@ from contextlib import nullcontext
 import hashlib
 import json
 import random
+import csv
 from pathlib import Path
 
 import numpy as np
@@ -157,6 +158,46 @@ class CUETrainer:
         self.dynamic_hard_enabled = (
             str(self.dynamic_hard_config.get("mode", "none")) == "dynamic_hard"
         )
+        # Hierarchical ablations deliberately disable the historical hard
+        # routing while retaining its consensus cache and refresh lifecycle.
+        self.hierarchical_mode = str(
+            config.get("experiment", {}).get("hierarchical_mode", "")
+        )
+        self.hierarchical_enabled = self.hierarchical_mode in {
+            "M1", "M2", "M3-control", "M3-discount", "M4", "M5", "M6"
+        }
+        self.pixel_uncertainty_enabled = self.hierarchical_mode in {
+            "M2", "M3-control", "M3-discount", "M4", "M5", "M6"
+        }
+        self.pixel_uncertainty_config = dict(config.get("pixel_uncertainty", {}))
+        self.pixel_uncertainty_memory: dict[str, np.ndarray | bool] = {}
+        self.pixel_uncertainty_memory_case: str | None = None
+        self.case_confidences: dict[str, float] = {}
+        self.refreshed_case_confidences: dict[str, float] = {}
+        self.case_confidence_path = config.get("image_uncertainty", {}).get("confidence_csv")
+        if self.case_confidence_path:
+            with Path(self.case_confidence_path).expanduser().open(
+                newline="", encoding="utf-8"
+            ) as handle:
+                for row in csv.DictReader(handle):
+                    self.case_confidences[str(row["case_id"])] = float(row["C_case"])
+        self.case_gradient_batch_size = int(
+            config.get("gradient_accumulation", {}).get("cases_per_optimizer_step", 2)
+        )
+        self.m3_gradient_accumulation = self.hierarchical_mode in {
+            "M3-control", "M3-discount", "M4", "M5", "M6"
+        }
+        self.pending_case_gradients: list[tuple[torch.Tensor, ...]] = []
+        self.pending_case_names: list[str] = []
+        self.pending_case_has_gradient: list[bool] = []
+        self.last_case_gradients: tuple[torch.Tensor, ...] | None = None
+        self.case_gradient_contributions: dict[str, dict[str, float | int]] = {}
+        self.case_gradient_zero_count = 0
+        self.case_gradient_norm_before_total = 0.0
+        self.case_gradient_norm_after_total = 0.0
+        self.case_gradient_count = 0
+        self.gradient_batches_attempted = 0
+        self.gradient_batches_skipped = 0
         self.dynamic_hard_cache: DynamicHardCache | None = None
         self.dynamic_prompt_embeddings: dict[str, torch.Tensor] = {}
         self.dynamic_hard_cache_memory: dict[str, np.ndarray | dict] = {}
@@ -172,13 +213,21 @@ class CUETrainer:
         self.stop_iteration: int | None = None
         self.stop_reason: str | None = None
         self.last_training_iteration = 0
-        self.branch_sample_counts = {"high": 0, "low": 0}
-        self.branch_patch_counts = {"high": 0, "low": 0}
-        self.branch_effective_patch_counts = {"high": 0, "low": 0}
-        self.branch_skipped_patch_counts = {"high": 0, "low": 0}
+        self.branch_sample_counts = {"high": 0, "low": 0, "both": 0}
+        self.branch_patch_counts = {"high": 0, "low": 0, "both": 0}
+        self.branch_effective_patch_counts = {"high": 0, "low": 0, "both": 0}
+        self.branch_skipped_patch_counts = {"high": 0, "low": 0, "both": 0}
         self.optimizer_step_count = 0
         self.dynamic_hard_loss_total = 0.0
         self.dynamic_hard_loss_patches = 0
+        self.hierarchical_component_totals: dict[str, float] = {}
+        self.hierarchical_component_counts: dict[str, int] = {}
+        self.hierarchical_nonfinite_gradient_counts = {"high": 0, "low": 0}
+        if self.m3_gradient_accumulation:
+            if self.case_gradient_batch_size < 2:
+                raise ValueError("M3+ requires at least two cases per optimizer step")
+            if not self.case_confidences:
+                raise ValueError("M3+ requires image_uncertainty.confidence_csv")
         if self.dynamic_hard_enabled:
             self.dynamic_hard_cache = DynamicHardCache(
                 self.dynamic_hard_config["cache_dir"]
@@ -218,20 +267,30 @@ class CUETrainer:
                         "configured Dynamic-hard refresh"
                     )
                 self.coverage_mode = True
-            self._initialize_routing(
-                str(self.config["method"].get("routing_mode", "original"))
-            )
-            routing_counts = (
-                int(self.routing_metadata.get("high", -1)),
-                int(self.routing_metadata.get("low", -1)),
-                int(self.routing_metadata.get("skip", -1)),
-            )
-            if len(self.train_cases) != 101 or routing_counts != (59, 42, 0):
-                raise RuntimeError(
-                    "M1 Dynamic-hard requires 101 routed cases with "
-                    f"High=59, Low=42, Skip=0; got {len(self.train_cases)} and "
-                    f"{routing_counts}"
+            if self.hierarchical_enabled:
+                self.partition.initialize({case.name: 1.0 for case in self.train_cases})
+                self.routing_metadata = {
+                    "mode": "uniform_all_cases",
+                    "high": len(self.train_cases),
+                    "low": 0,
+                    "skip": 0,
+                }
+                save_json(self.routing_metadata, self.output_dir / "routing_summary.json")
+            else:
+                self._initialize_routing(
+                    str(self.config["method"].get("routing_mode", "original"))
                 )
+                routing_counts = (
+                    int(self.routing_metadata.get("high", -1)),
+                    int(self.routing_metadata.get("low", -1)),
+                    int(self.routing_metadata.get("skip", -1)),
+                )
+                if len(self.train_cases) != 101 or routing_counts != (59, 42, 0):
+                    raise RuntimeError(
+                        "M1 Dynamic-hard requires 101 routed cases with "
+                        f"High=59, Low=42, Skip=0; got {len(self.train_cases)} and "
+                        f"{routing_counts}"
+                    )
             self._ensure_dynamic_hard_cache()
             if resume is None:
                 self._save_latest(0)
@@ -308,7 +367,74 @@ class CUETrainer:
             )
             case = self.train_cases[case_index]
             partner = self.train_cases[partner_index]
-            metrics = self._train_step(case, partner)
+            case_discount = self._case_gradient_discount(case)
+            metrics = self._train_step(
+                case,
+                partner,
+                defer_optimizer_step=self.m3_gradient_accumulation,
+                case_discount=case_discount,
+            )
+            optimizer_batch_complete = True
+            if self.m3_gradient_accumulation:
+                if self.last_case_gradients is None:
+                    raise RuntimeError("Deferred case gradients were not returned")
+                self.pending_case_gradients.append(self.last_case_gradients)
+                self.pending_case_names.append(case.name)
+                self.case_gradient_zero_count += int(case_discount <= 0.0)
+                self.case_gradient_norm_before_total += float(
+                    metrics.get("case_gradient_norm_before_discount", 0.0)
+                )
+                self.case_gradient_norm_after_total += float(
+                    metrics.get("case_gradient_norm_after_discount", 0.0)
+                )
+                self.case_gradient_count += 1
+                contribution = self.case_gradient_contributions.setdefault(
+                    case.name,
+                    {
+                        "sampled_case_count": 0,
+                        "discount_sum": 0.0,
+                        "gradient_norm_before_sum": 0.0,
+                        "gradient_norm_after_sum": 0.0,
+                        "nonzero_gradient_case_count": 0,
+                        "optimizer_steps_contributed": 0,
+                        "zero_discount_count": 0,
+                    },
+                )
+                contribution["sampled_case_count"] += 1
+                contribution["discount_sum"] += float(case_discount)
+                contribution["gradient_norm_before_sum"] += float(
+                    metrics.get("case_gradient_norm_before_discount", 0.0)
+                )
+                discounted_norm = float(
+                    metrics.get("case_gradient_norm_after_discount", 0.0)
+                )
+                contribution["gradient_norm_after_sum"] += discounted_norm
+                contribution["nonzero_gradient_case_count"] += int(
+                    discounted_norm > 0.0
+                )
+                contribution["zero_discount_count"] += int(case_discount <= 0.0)
+                self.pending_case_has_gradient.append(discounted_norm > 0.0)
+                optimizer_batch_complete = (
+                    iteration % self.case_gradient_batch_size == 0
+                )
+                if optimizer_batch_complete:
+                    batch_step_executed = self._apply_case_gradient_batch(
+                        self.pending_case_gradients
+                    )
+                    if batch_step_executed:
+                        for case_name, has_gradient in zip(
+                            self.pending_case_names,
+                            self.pending_case_has_gradient,
+                            strict=True,
+                        ):
+                            if has_gradient:
+                                self.case_gradient_contributions[case_name][
+                                    "optimizer_steps_contributed"
+                                ] += 1
+                    self.pending_case_gradients.clear()
+                    self.pending_case_names.clear()
+                    self.pending_case_has_gradient.clear()
+                    metrics["optimizer_step_count"] = self.optimizer_step_count
             self.last_training_iteration = iteration
             if self.dynamic_hard_enabled:
                 branch = str(metrics["branch"])
@@ -340,7 +466,29 @@ class CUETrainer:
                         self.refresh_cycle < self.max_refresh_cycles,
                     )
             if iteration == 1 or iteration % log_every == 0:
-                if self.dynamic_hard_enabled:
+                if self.hierarchical_enabled:
+                    self.logger.info(
+                        "iteration=%d/%d case=%s patches=%d effective_patches=%d "
+                        "loss=%.6f high_loss=%.6f low_loss=%.6f "
+                        "high_grad_norm=%.6f low_grad_norm=%.6f "
+                        "case_discount=%.4f case_grad_norm=%.6f discounted_grad_norm=%.6f "
+                        "dynamic_hard_loss=%.6f",
+                        iteration,
+                        total_iterations,
+                        case.name,
+                        metrics["patches"],
+                        metrics["effective_patches"],
+                        metrics["loss"],
+                        metrics.get("high_loss", 0.0),
+                        metrics.get("low_loss", 0.0),
+                        metrics.get("high_gradient_norm", 0.0),
+                        metrics.get("low_gradient_norm", 0.0),
+                        metrics.get("case_gradient_discount", 1.0),
+                        metrics.get("case_gradient_norm_before_discount", 0.0),
+                        metrics.get("case_gradient_norm_after_discount", 0.0),
+                        metrics.get("dynamic_hard_loss", 0.0),
+                    )
+                elif self.dynamic_hard_enabled:
                     self.logger.info(
                         "iteration=%d/%d case=%s patches=%d effective_patches=%d skipped_patches=%d branch=%s loss=%.6f dynamic_hard_loss=%.6f confidence=%.4f raw_foreground=%.6f refined_foreground=%.6f split=%.4f",
                         iteration,
@@ -396,6 +544,7 @@ class CUETrainer:
                 self._save_latest(iteration)
             should_validate = validation_every > 0
             should_validate = should_validate and iteration % validation_every == 0
+            should_validate = should_validate and optimizer_batch_complete
             should_validate = should_validate and bool(self.validation_cases)
             if should_validate:
                 should_stop = self._validate(iteration)
@@ -411,6 +560,7 @@ class CUETrainer:
             )
             if (
                 coverage_complete
+                and optimizer_batch_complete
                 and self.coverage_mode
                 and not self._dynamic_hard_refresh_ready()
             ):
@@ -423,7 +573,11 @@ class CUETrainer:
                     self.refresh_cycle + 1,
                     iteration,
                 )
-            elif self.dynamic_hard_enabled and self._dynamic_hard_refresh_ready():
+            elif (
+                self.dynamic_hard_enabled
+                and optimizer_batch_complete
+                and self._dynamic_hard_refresh_ready()
+            ):
                 self._refresh_dynamic_hard_cache(iteration)
                 # Persist the new active cache version and the cleared coverage
                 # set together, so a resume cannot roll back across refresh.
@@ -431,6 +585,7 @@ class CUETrainer:
                 refreshed = True
             if (
                 iteration % save_every == 0
+                and optimizer_batch_complete
                 and iteration < total_iterations
                 and not refreshed
                 and self.dynamic_hard_enabled
@@ -535,6 +690,10 @@ class CUETrainer:
                 self.config["model"]
             ),
         }
+        if "quality_protocol" in self.dynamic_hard_config:
+            expected_metadata["quality_protocol"] = str(
+                self.dynamic_hard_config["quality_protocol"]
+            )
         try:
             version_metadata = self.dynamic_hard_cache.metadata(active_version)
         except (OSError, json.JSONDecodeError):
@@ -652,6 +811,7 @@ class CUETrainer:
         self.refresh_cycle = cycle
         self.seen_cases_since_refresh.clear()
         self.coverage_mode = True
+        self.refreshed_case_confidences.clear()
         self.dynamic_hard_cache_memory.clear()
         self.dynamic_hard_memory_case = None
         metadata = self.dynamic_hard_cache.metadata(self.refresh_cycle)
@@ -706,6 +866,9 @@ class CUETrainer:
     def _write_training_summary(self) -> None:
         if not self.dynamic_hard_enabled:
             return
+        dynamic_hard_patch_count = self.dynamic_hard_loss_patches
+        if self.hierarchical_enabled:
+            dynamic_hard_patch_count = self.branch_patch_counts["both"]
         save_json(
             {
                 "iterations_completed": int(self.last_training_iteration),
@@ -717,9 +880,15 @@ class CUETrainer:
                 "branch_ineffective_patches": self.branch_skipped_patch_counts,
                 "dynamic_hard_loss_mean": (
                     self.dynamic_hard_loss_total
-                    / max(self.dynamic_hard_loss_patches, 1)
+                    / max(dynamic_hard_patch_count, 1)
                 ),
-                "dynamic_hard_loss_patches": self.dynamic_hard_loss_patches,
+                "dynamic_hard_loss_patches": dynamic_hard_patch_count,
+                "optimizer_steps": self.optimizer_step_count,
+                "case_gradient_batches_attempted": self.gradient_batches_attempted,
+                "case_gradient_batches_skipped": self.gradient_batches_skipped,
+                "cases_with_zero_discount": self.case_gradient_zero_count,
+                "mean_case_gradient_norm_before_discount": self.case_gradient_norm_before_total / max(self.case_gradient_count, 1),
+                "mean_case_gradient_norm_after_discount": self.case_gradient_norm_after_total / max(self.case_gradient_count, 1),
                 "css_high_attempts": self.high_selection_attempts,
                 "css_high_accepts": self.high_selection_accepts,
                 "css_high_rejects": self.high_selection_rejects,
@@ -730,9 +899,52 @@ class CUETrainer:
                     name: self.liver_loss_totals[name] / max(self.liver_loss_counts[name], 1)
                     for name in self.liver_loss_totals
                 },
+                "hierarchical_component_means": {
+                    name: self.hierarchical_component_totals[name]
+                    / max(self.hierarchical_component_counts.get(name, 0), 1)
+                    for name in self.hierarchical_component_totals
+                },
+                "hierarchical_nonfinite_gradient_counts": self.hierarchical_nonfinite_gradient_counts,
+                "case_gradient_contribution_rows": len(
+                    self.case_gradient_contributions
+                ),
             },
             self.output_dir / "training_summary.json",
         )
+        if self.case_gradient_contributions:
+            fields = [
+                "case_id",
+                "sampled_case_count",
+                "discount_sum",
+                "mean_discount",
+                "gradient_norm_before_sum",
+                "gradient_norm_after_sum",
+                "mean_gradient_norm_before",
+                "mean_gradient_norm_after",
+                "nonzero_gradient_case_count",
+                "optimizer_steps_contributed",
+                "zero_discount_count",
+            ]
+            with (self.output_dir / "case_gradient_contributions.csv").open(
+                "w", newline="", encoding="utf-8"
+            ) as handle:
+                writer = csv.DictWriter(handle, fieldnames=fields)
+                writer.writeheader()
+                for case_name, values in sorted(self.case_gradient_contributions.items()):
+                    count = max(int(values["sampled_case_count"]), 1)
+                    writer.writerow(
+                        {
+                            "case_id": case_name,
+                            **values,
+                            "mean_discount": float(values["discount_sum"]) / count,
+                            "mean_gradient_norm_before": float(
+                                values["gradient_norm_before_sum"]
+                            ) / count,
+                            "mean_gradient_norm_after": float(
+                                values["gradient_norm_after_sum"]
+                            ) / count,
+                        }
+                    )
 
     def _trainer_checkpoint_state(self) -> dict:
         state = {
@@ -751,6 +963,17 @@ class CUETrainer:
             "branch_skipped_patch_counts": self.branch_skipped_patch_counts,
             "dynamic_hard_loss_total": self.dynamic_hard_loss_total,
             "dynamic_hard_loss_patches": self.dynamic_hard_loss_patches,
+            "optimizer_step_count": self.optimizer_step_count,
+            "hierarchical_component_totals": self.hierarchical_component_totals,
+            "hierarchical_component_counts": self.hierarchical_component_counts,
+            "hierarchical_nonfinite_gradient_counts": self.hierarchical_nonfinite_gradient_counts,
+            "case_gradient_zero_count": self.case_gradient_zero_count,
+            "case_gradient_norm_before_total": self.case_gradient_norm_before_total,
+            "case_gradient_norm_after_total": self.case_gradient_norm_after_total,
+            "case_gradient_count": self.case_gradient_count,
+            "gradient_batches_attempted": self.gradient_batches_attempted,
+            "gradient_batches_skipped": self.gradient_batches_skipped,
+            "case_gradient_contributions": self.case_gradient_contributions,
         }
         if self.high_selection_mode != "none":
             state["high_selection_state"] = {
@@ -875,6 +1098,8 @@ class CUETrainer:
         high_indices: list[int],
         low_indices: list[int],
     ) -> int:
+        if self.hierarchical_enabled:
+            return int(torch.randint(len(self.train_cases), (1,), generator=self.generator).item())
         probability = float(
             self.config["method"].get("high_quality_sampling_probability", 0.5)
         )
@@ -967,7 +1192,12 @@ class CUETrainer:
         )
 
     def _train_step(
-        self, case: CaseRecord, partner: CaseRecord
+        self,
+        case: CaseRecord,
+        partner: CaseRecord,
+        *,
+        defer_optimizer_step: bool = False,
+        case_discount: float = 1.0,
     ) -> dict[str, float | str | int]:
         high_confidence = self.partition.is_high_confidence(case.name)
         if hasattr(self.store, "sliding_window_with_geometry"):
@@ -990,6 +1220,8 @@ class CUETrainer:
         raw_foreground_sum = 0
         refined_foreground_sum = 0
         dynamic_hard_loss_sum = 0.0
+        hierarchical_component_sums: dict[str, float] = {}
+        hierarchical_component_counts: dict[str, int] = {}
         voxel_sum = 0
         effective_patch_count = 0
         skipped_patch_count = 0
@@ -1040,7 +1272,41 @@ class CUETrainer:
             partner_slicer = partner_slicers[patch_index % len(partner_slicers)]
             image = self._patch(case_volume, case_slicer)
             partner_image = self._patch(partner_volume, partner_slicer)
-            if high_confidence:
+            patch_backpropagated = False
+            if self.hierarchical_enabled:
+                high_loss, high_metrics = self._high_confidence_loss(
+                    image, case, case_slicer
+                )
+                if not torch.isfinite(high_loss):
+                    raise FloatingPointError(
+                        f"Non-finite High loss for {case.name} patch {patch_index}"
+                    )
+                high_grads, high_gradient_norm = self._scaled_loss_gradients(high_loss, "high")
+                low_loss, low_metrics = self._low_confidence_loss(
+                    image, partner_image, case, case_slicer
+                )
+                if not torch.isfinite(low_loss):
+                    raise FloatingPointError(
+                        f"Non-finite Low loss for {case.name} patch {patch_index}"
+                    )
+                low_grads, low_gradient_norm = self._scaled_loss_gradients(low_loss, "low")
+                self._accumulate_gradient_tuples(high_grads, low_grads)
+                loss = high_loss.detach() + low_loss.detach()
+                patch_backpropagated = True
+                patch_metrics = {
+                    **high_metrics,
+                    "effective": bool(high_metrics["effective"])
+                    or bool(low_metrics["effective"]),
+                    "high_loss": float(high_loss.detach()),
+                    "low_loss": float(low_loss.detach()),
+                    "high_gradient_norm": high_gradient_norm,
+                    "low_gradient_norm": low_gradient_norm,
+                    "dynamic_hard_loss": float(
+                        low_metrics.get("dynamic_hard_loss", 0.0)
+                    ),
+                }
+                branch = "both"
+            elif high_confidence:
                 if getattr(self, "liver_config", None) or str(
                     self.config.get("method", {}).get("high_pseudo_target", "source")
                 ) == "prompt_consensus":
@@ -1061,7 +1327,8 @@ class CUETrainer:
             if not torch.isfinite(loss):
                 message = f"Non-finite loss for {case.name} patch {patch_index}"
                 raise FloatingPointError(message)
-            self.scaler.scale(loss).backward()
+            if not patch_backpropagated:
+                self.scaler.scale(loss).backward()
             loss_sum += float(loss.detach().item())
             confidence_sum += self.partition.scores[case.name]
             raw_foreground_sum += int(patch_metrics["raw_foreground_voxels"])
@@ -1071,6 +1338,18 @@ class CUETrainer:
             dynamic_hard_loss_sum += float(
                 patch_metrics.get("dynamic_hard_loss", 0.0)
             )
+            for component in (
+                "high_loss", "low_loss", "high_gradient_norm", "low_gradient_norm"
+            ):
+                if component in patch_metrics:
+                    value = float(patch_metrics[component])
+                    step_loss_components.setdefault(component, []).append(value)
+                    hierarchical_component_sums[component] = (
+                        hierarchical_component_sums.get(component, 0.0) + value
+                    )
+                    hierarchical_component_counts[component] = (
+                        hierarchical_component_counts.get(component, 0) + 1
+                    )
             voxel_sum += int(patch_metrics["voxels"])
             if bool(patch_metrics["effective"]):
                 effective_patch_count += 1
@@ -1134,6 +1413,51 @@ class CUETrainer:
                 self.liver_loss_counts.get("volume_constraint_updates", 0) + 1
             )
         del volume_gradient, volume_normalization, volume_gaussian
+        if defer_optimizer_step:
+            gradient_denominator = max(effective_patch_count, 1)
+            scale = float(self.scaler.get_scale()) if self.amp_enabled else 1.0
+            norm_square = torch.zeros((), dtype=torch.float32, device=self.device)
+            case_gradients = []
+            for parameter in self.runtime.trainable_parameters:
+                grad = parameter.grad
+                if grad is None:
+                    case_gradients.append(torch.zeros_like(parameter))
+                    continue
+                normalized = grad.detach() / gradient_denominator
+                norm_square.add_(normalized.float().square().sum() / (scale * scale))
+                case_gradients.append(normalized * float(case_discount))
+            norm_before_discount = float(norm_square.sqrt().item())
+            self.last_case_gradients = tuple(grad.detach().clone() for grad in case_gradients)
+            self.optimizer.zero_grad(set_to_none=True)
+            case_confidence = confidence_sum / patch_count
+            metrics: dict[str, float | str | int] = {
+                "branch": branch,
+                "patches": patch_count,
+                "effective_patches": effective_patch_count,
+                "skipped_patches": skipped_patch_count,
+                "loss": loss_sum / gradient_denominator,
+                "confidence": case_confidence,
+                "raw_foreground_fraction": raw_foreground_sum / max(voxel_sum, 1),
+                "refined_foreground_fraction": refined_foreground_sum / max(voxel_sum, 1),
+                "volume_constraint_loss": volume_loss_value,
+                "student_teacher_volume_ratio": volume_ratio,
+                "case_gradient_discount": float(case_discount),
+                "case_gradient_norm_before_discount": norm_before_discount,
+                "case_gradient_norm_after_discount": norm_before_discount * float(case_discount),
+            }
+            for component, values in step_loss_components.items():
+                metrics[component] = float(np.mean(values))
+            for component, value in hierarchical_component_sums.items():
+                self.hierarchical_component_totals[component] = (
+                    self.hierarchical_component_totals.get(component, 0.0) + value
+                )
+                self.hierarchical_component_counts[component] = (
+                    self.hierarchical_component_counts.get(component, 0)
+                    + hierarchical_component_counts[component]
+                )
+            if self.dynamic_hard_enabled:
+                metrics["dynamic_hard_loss"] = dynamic_hard_loss_sum / max(patch_count, 1)
+            return metrics
         self.scaler.unscale_(self.optimizer)
         gradient_denominator = max(effective_patch_count, 1)
         for parameter in self.runtime.trainable_parameters:
@@ -1213,6 +1537,14 @@ class CUETrainer:
         }
         for component, values in step_loss_components.items():
             metrics[component] = float(np.mean(values))
+        for component, value in hierarchical_component_sums.items():
+            self.hierarchical_component_totals[component] = (
+                self.hierarchical_component_totals.get(component, 0.0) + value
+            )
+            self.hierarchical_component_counts[component] = (
+                self.hierarchical_component_counts.get(component, 0)
+                + hierarchical_component_counts[component]
+            )
         if self.dynamic_hard_enabled:
             metrics["dynamic_hard_loss"] = dynamic_hard_loss_sum / max(
                 patch_count, 1
@@ -1230,6 +1562,71 @@ class CUETrainer:
             })
         return metrics
 
+    def _case_gradient_discount(self, case: CaseRecord) -> float:
+        if not self.m3_gradient_accumulation:
+            return 1.0
+        if self.hierarchical_mode == "M3-control":
+            return 1.0
+        if (
+            self.hierarchical_mode in {"M5", "M6"}
+            and self.refresh_cycle > 0
+        ):
+            if self.dynamic_hard_cache is None:
+                raise RuntimeError("Dynamic image confidence requires Dynamic-hard cache")
+            if not self.refreshed_case_confidences:
+                self.refreshed_case_confidences = (
+                    self.dynamic_hard_cache.case_confidences(self.refresh_cycle)
+                )
+            confidence = self.refreshed_case_confidences.get(case.name)
+            if confidence is None:
+                raise KeyError(
+                    f"Refreshed image-level confidence missing for {case.name}"
+                )
+            return float(np.clip(float(confidence), 0.0, 1.0))
+        case_id = case.name[:-7] if case.name.lower().endswith(".nii.gz") else Path(case.name).stem
+        if case_id not in self.case_confidences:
+            raise KeyError(f"Missing image-level confidence for {case.name}")
+        return float(np.clip(self.case_confidences[case_id], 0.0, 1.0))
+
+    def _apply_case_gradient_batch(
+        self, case_gradients: list[tuple[torch.Tensor, ...]]
+    ) -> bool:
+        if len(case_gradients) != self.case_gradient_batch_size:
+            raise ValueError(
+                "Gradient batch size mismatch: "
+                f"expected {self.case_gradient_batch_size}, got {len(case_gradients)}"
+            )
+        parameters = self.runtime.trainable_parameters
+        with torch.no_grad():
+            for index, parameter in enumerate(parameters):
+                combined = torch.zeros_like(parameter)
+                for gradients in case_gradients:
+                    combined.add_(gradients[index])
+                parameter.grad = combined / float(self.case_gradient_batch_size)
+        self.gradient_batches_attempted += 1
+        self.scaler.unscale_(self.optimizer)
+        nonzero_tensor = torch.zeros((), dtype=torch.bool, device=self.device)
+        for parameter in parameters:
+            if parameter.grad is not None:
+                nonzero_tensor.logical_or_(torch.count_nonzero(parameter.grad) > 0)
+        nonzero = bool(nonzero_tensor.item())
+        finite = gradients_are_finite(parameters)
+        step_executed = False
+        if nonzero and finite:
+            torch.nn.utils.clip_grad_norm_(
+                parameters, float(self.config["train"]["max_grad_norm"])
+            )
+            will_skip = scaler_will_skip_step(self.scaler, self.optimizer)
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+            step_executed = not will_skip
+        else:
+            self.scaler.update()
+            self.gradient_batches_skipped += 1
+        self.optimizer.zero_grad(set_to_none=True)
+        self.optimizer_step_count += int(step_executed)
+        return step_executed
+
     def _selection_reference_cases(self, excluded: str) -> list[CaseRecord]:
         high_cases = [case for case in self.train_cases if self.partition.is_high_confidence(case.name)]
         pool = [case for case in high_cases if case.name != excluded]
@@ -1239,6 +1636,53 @@ class CUETrainer:
             return []
         self.high_selection_rng.shuffle(pool)
         return sorted(pool[:count], key=lambda case: case.name)
+
+    def _scaled_loss_gradients(
+        self, loss: torch.Tensor, component: str
+    ) -> tuple[tuple[torch.Tensor | None, ...], float]:
+        """Return one scaled loss gradient and its unscaled global norm."""
+        parameters = self.runtime.trainable_parameters
+        scale = float(self.scaler.get_scale()) if self.amp_enabled else 1.0
+        gradients = torch.autograd.grad(
+            self.scaler.scale(loss), parameters, allow_unused=True
+        )
+        finite = all(
+            gradient is None or bool(torch.isfinite(gradient).all().item())
+            for gradient in gradients
+        )
+        if not finite:
+            self.hierarchical_nonfinite_gradient_counts[component] += 1
+            self.logger.warning(
+                "non-finite %s gradient detected in hierarchical branch", component
+            )
+        square = torch.zeros((), dtype=torch.float32, device=self.device)
+        with torch.no_grad():
+            for gradient in gradients:
+                if gradient is not None:
+                    square.add_(gradient.float().square().sum() / (scale * scale))
+        return gradients, float(square.sqrt().item())
+
+    def _accumulate_gradient_tuples(
+        self,
+        first: tuple[torch.Tensor | None, ...],
+        second: tuple[torch.Tensor | None, ...],
+    ) -> None:
+        parameters = self.runtime.trainable_parameters
+        with torch.no_grad():
+            for parameter, first_grad, second_grad in zip(
+                parameters, first, second, strict=True
+            ):
+                combined = None
+                if first_grad is not None:
+                    combined = first_grad.detach()
+                if second_grad is not None:
+                    combined = second_grad.detach() if combined is None else combined + second_grad.detach()
+                if combined is not None:
+                    parameter.grad = (
+                        combined
+                        if parameter.grad is None
+                        else parameter.grad + combined
+                    )
 
     def _refresh_high_selection_cache(self, iteration: int, excluded: str) -> None:
         mode = self.high_selection_mode
@@ -1728,15 +2172,26 @@ class CUETrainer:
         student_probability = torch.sigmoid(student_logits.float())
         # Once a case passes Eq. (11), the paper supervises the complete
         # affinity-refined pseudo-label rather than masking it a second time.
-        weight = torch.ones_like(refined) if confidence is None else confidence
+        original_empty = False
+        if self.pixel_uncertainty_enabled:
+            if case is None or case_slicer is None:
+                raise ValueError("Pixel uncertainty requires case patch geometry")
+            weight, original_empty = self._pixel_uncertainty_patch(case, case_slicer)
+            weight = weight.detach()
+        else:
+            weight = torch.ones_like(refined) if confidence is None else confidence
         pseudo_voxels = int((refined >= threshold).sum().item())
         minimum = int(method_config.get("min_pseudo_foreground_voxels", 8))
+        # Empty frozen-source predictions do not by themselves invalidate a
+        # later refined target; only the existing effective-foreground rule
+        # decides whether High pseudo supervision has support.
         base_effective = pseudo_voxels >= minimum
         patch_metrics = {
             "raw_foreground_voxels": raw_voxels,
             "refined_foreground_voxels": pseudo_voxels,
             "voxels": refined.numel(),
             "effective": base_effective,
+            "original_prediction_empty": original_empty,
         }
         if base_effective and bool(self.config["train"].get("balance_high_bce", True)):
             bce = balanced_masked_binary_cross_entropy(student_probability, refined, weight)
@@ -1877,12 +2332,27 @@ class CUETrainer:
                     "Dynamic-hard supervision requires case and patch geometry"
                 )
             target, confidence = self._dynamic_hard_patch(case, case_slicer)
-            dynamic_hard_loss_tensor = dynamic_hard_consensus_loss(
-                student_probability,
-                target,
-                confidence,
-                float(self.dynamic_hard_config.get("confidence_threshold", 0.0)),
-            )
+            if self.pixel_uncertainty_enabled:
+                weight, original_empty = self._pixel_uncertainty_patch(case, case_slicer)
+                weight = weight.detach()
+                # A case whose source prediction was empty must retain only
+                # consistency learning.  A non-empty Dynamic-hard consensus
+                # alone is not evidence that should create foreground targets.
+                if original_empty or not bool(
+                    (target.detach() >= float(self.config["method"]["probability_threshold"])).any()
+                ):
+                    dynamic_hard_loss_tensor = student_probability.sum() * 0.0
+                else:
+                    dynamic_hard_loss_tensor = masked_binary_cross_entropy(
+                        student_probability, target.detach(), weight
+                    )
+            else:
+                dynamic_hard_loss_tensor = dynamic_hard_consensus_loss(
+                    student_probability,
+                    target,
+                    confidence,
+                    float(self.dynamic_hard_config.get("confidence_threshold", 0.0)),
+                )
             dynamic_hard_loss = float(dynamic_hard_loss_tensor.detach().item())
             loss = loss + float(
                 self.dynamic_hard_config.get("lambda_consensus", 0.05)
@@ -1898,6 +2368,50 @@ class CUETrainer:
         if self.dynamic_hard_enabled:
             patch_metrics["dynamic_hard_loss"] = dynamic_hard_loss
         return loss, patch_metrics
+
+    def _pixel_uncertainty_patch(
+        self,
+        case: CaseRecord,
+        slicer: tuple[slice, slice, slice],
+    ) -> tuple[torch.Tensor, bool]:
+        cache_dir = self.pixel_uncertainty_config.get("cache_dir")
+        if not cache_dir:
+            raise RuntimeError("Pixel uncertainty cache_dir is not configured")
+        if self.pixel_uncertainty_memory_case != case.name:
+            case_id = case.name[:-7] if case.name.lower().endswith(".nii.gz") else Path(case.name).stem
+            path = Path(cache_dir).expanduser() / f"{case_id}.npz"
+            if not path.is_file():
+                raise FileNotFoundError(f"Fixed pixel uncertainty map missing: {path}")
+            with np.load(path, allow_pickle=False) as payload:
+                self.pixel_uncertainty_memory = {
+                    "weight": payload["weight"].astype(np.float32, copy=False),
+                    "original_empty": bool(payload["original_empty"].item()),
+                }
+            self.pixel_uncertainty_memory_case = case.name
+        full = self.pixel_uncertainty_memory["weight"]
+        original_empty = bool(self.pixel_uncertainty_memory["original_empty"])
+        if (
+            self.hierarchical_mode in {"M4", "M5", "M6"}
+            and self.refresh_cycle > 0
+            and self.dynamic_hard_cache is not None
+        ):
+            if self.dynamic_hard_memory_case != case.name:
+                self.dynamic_hard_cache_memory = self.dynamic_hard_cache.load_case(
+                    case, self.refresh_cycle
+                )
+                self.dynamic_hard_memory_case = case.name
+            refreshed_weight = self.dynamic_hard_cache_memory.get("pixel_weight")
+            if isinstance(refreshed_weight, np.ndarray):
+                full = refreshed_weight
+            geometry = self.dynamic_hard_cache_memory.get("geometry", {})
+            original_empty = bool(
+                geometry.get("original_prediction_empty", original_empty)
+            )
+        if not isinstance(full, np.ndarray):
+            raise TypeError("Corrupt fixed pixel uncertainty cache")
+        patch = np.ascontiguousarray(full[(slice(None), *slicer)])
+        tensor = torch.from_numpy(patch).unsqueeze(0).to(self.device)
+        return tensor, original_empty
 
     def _dynamic_hard_patch(
         self,
@@ -2086,6 +2600,13 @@ class CUETrainer:
         for parameter_group in self.optimizer.param_groups:
             parameter_group["lr"] = configured_lr
         self.start_iteration = int(checkpoint.get("iteration", 0))
+        if (
+            self.m3_gradient_accumulation
+            and self.start_iteration % self.case_gradient_batch_size
+        ):
+            raise ValueError(
+                "M3+ checkpoints must align to a complete case-gradient batch"
+            )
         training_state = checkpoint.get("trainer_state", {})
         sidecar_reference = training_state.get("high_selection_sidecar")
         if sidecar_reference is not None and self.high_selection_mode != "none":
@@ -2140,6 +2661,32 @@ class CUETrainer:
         self.dynamic_hard_loss_patches = int(
             training_state.get("dynamic_hard_loss_patches", 0)
         )
+        self.optimizer_step_count = int(training_state.get("optimizer_step_count", 0))
+        self.hierarchical_component_totals = {
+            str(name): float(value)
+            for name, value in training_state.get("hierarchical_component_totals", {}).items()
+        }
+        self.hierarchical_component_counts = {
+            str(name): int(value)
+            for name, value in training_state.get("hierarchical_component_counts", {}).items()
+        }
+        for component, count in training_state.get(
+            "hierarchical_nonfinite_gradient_counts", {}
+        ).items():
+            if component in self.hierarchical_nonfinite_gradient_counts:
+                self.hierarchical_nonfinite_gradient_counts[component] = int(count)
+        self.case_gradient_zero_count = int(training_state.get("case_gradient_zero_count", 0))
+        self.case_gradient_norm_before_total = float(training_state.get("case_gradient_norm_before_total", 0.0))
+        self.case_gradient_norm_after_total = float(training_state.get("case_gradient_norm_after_total", 0.0))
+        self.case_gradient_count = int(training_state.get("case_gradient_count", 0))
+        self.gradient_batches_attempted = int(training_state.get("gradient_batches_attempted", 0))
+        self.gradient_batches_skipped = int(training_state.get("gradient_batches_skipped", 0))
+        self.case_gradient_contributions = {
+            str(case_name): dict(values)
+            for case_name, values in training_state.get(
+                "case_gradient_contributions", {}
+            ).items()
+        }
         best_dice = checkpoint.get("best_dice")
         best_iteration = checkpoint.get("best_iteration")
         if best_dice is not None:

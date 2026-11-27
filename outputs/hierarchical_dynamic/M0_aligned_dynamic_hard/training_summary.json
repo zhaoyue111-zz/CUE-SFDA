@@ -1,0 +1,35 @@
+{
+  "iterations_completed": 2000,
+  "branch_sample_counts": {
+    "high": 1497,
+    "low": 503,
+    "both": 0
+  },
+  "branch_patch_counts": {
+    "high": 6946,
+    "low": 2047,
+    "both": 0
+  },
+  "branch_effective_supervision_patches": {
+    "high": 4468,
+    "low": 2047,
+    "both": 0
+  },
+  "branch_ineffective_patches": {
+    "high": 2478,
+    "low": 0,
+    "both": 0
+  },
+  "dynamic_hard_loss_mean": 12.58258327717681,
+  "dynamic_hard_loss_patches": 0,
+  "css_high_attempts": 0,
+  "css_high_accepts": 0,
+  "css_high_rejects": 0,
+  "css_high_acceptance_rate": 0.0,
+  "liver_loss_means": {
+    "high_bce_loss": 0.11015994443309758,
+    "high_dice_loss": 0.4285403254745138
+  },
+  "hierarchical_component_means": {},
+  "optimizer_steps": 1994
+}

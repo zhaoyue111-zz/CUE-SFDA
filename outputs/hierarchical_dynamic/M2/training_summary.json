@@ -1,0 +1,50 @@
+{
+  "iterations_completed": 400,
+  "branch_sample_counts": {
+    "high": 0,
+    "low": 0,
+    "both": 400
+  },
+  "branch_patch_counts": {
+    "high": 0,
+    "low": 0,
+    "both": 1813
+  },
+  "branch_effective_supervision_patches": {
+    "high": 0,
+    "low": 0,
+    "both": 1813
+  },
+  "branch_ineffective_patches": {
+    "high": 0,
+    "low": 0,
+    "both": 0
+  },
+  "dynamic_hard_loss_mean": 0.03827075368132541,
+  "dynamic_hard_loss_patches": 1813,
+  "optimizer_steps": 392,
+  "case_gradient_batches_attempted": 0,
+  "case_gradient_batches_skipped": 0,
+  "cases_with_zero_discount": 0,
+  "mean_case_gradient_norm_before_discount": 0.0,
+  "mean_case_gradient_norm_after_discount": 0.0,
+  "css_high_attempts": 0,
+  "css_high_accepts": 0,
+  "css_high_rejects": 0,
+  "css_high_acceptance_rate": 0.0,
+  "liver_loss_means": {
+    "high_bce_loss": 0.22392716018973105,
+    "high_dice_loss": 0.35857733000856834
+  },
+  "hierarchical_component_means": {
+    "high_loss": 0.582504491104451,
+    "low_loss": 0.9315250143313016,
+    "high_gradient_norm": NaN,
+    "low_gradient_norm": NaN
+  },
+  "hierarchical_nonfinite_gradient_counts": {
+    "high": 7,
+    "low": 2
+  },
+  "case_gradient_contribution_rows": 0
+}
